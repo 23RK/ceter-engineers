@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth";
+import { requirePartner } from "@/lib/auth";
 import type { ProjectStatus } from "@prisma/client";
 import type { ActionState } from "@/lib/actions/tasks";
 
@@ -30,7 +30,7 @@ export async function createProject(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const user = await requireUser();
+  const user = await requirePartner();
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "יש להזין שם פרויקט" };
@@ -66,7 +66,7 @@ export async function updateProject(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const user = await requireUser();
+  const user = await requirePartner();
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "יש להזין שם פרויקט" };
@@ -108,7 +108,7 @@ export async function updateProject(
 }
 
 export async function deleteProject(projectId: string) {
-  await requireUser();
+  await requirePartner();
   await prisma.project.delete({ where: { id: projectId } });
   revalidatePath("/projects");
   revalidatePath("/dashboard");
@@ -120,7 +120,7 @@ export async function createMilestone(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  await requireUser();
+  await requirePartner();
 
   const title = String(formData.get("title") ?? "").trim();
   if (!title) return { error: "יש להזין כותרת לאבן דרך" };
@@ -141,7 +141,7 @@ export async function createMilestone(
 }
 
 export async function toggleMilestone(milestoneId: string, done: boolean) {
-  await requireUser();
+  await requirePartner();
   const milestone = await prisma.milestone.update({
     where: { id: milestoneId },
     data: { done },
@@ -150,7 +150,7 @@ export async function toggleMilestone(milestoneId: string, done: boolean) {
 }
 
 export async function deleteMilestone(milestoneId: string) {
-  await requireUser();
+  await requirePartner();
   const milestone = await prisma.milestone.delete({
     where: { id: milestoneId },
   });

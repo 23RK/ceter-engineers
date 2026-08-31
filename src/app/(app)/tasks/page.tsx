@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth";
+import { requirePartner } from "@/lib/auth";
 import { TasksClient } from "@/components/tasks/tasks-client";
 
 export default async function TasksPage() {
-  await requireUser();
+  await requirePartner();
 
   const [tasks, users, projects] = await Promise.all([
     prisma.task.findMany({

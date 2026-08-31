@@ -9,14 +9,14 @@ import {
   Activity as ActivityIcon,
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth";
+import { requirePartner } from "@/lib/auth";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { taskPriorityMeta, PROJECT_STATUSES } from "@/lib/constants";
 import { formatDate, formatDateShort, isOverdue } from "@/lib/format";
 
 export default async function DashboardPage() {
-  const user = await requireUser();
+  const user = await requirePartner();
   const today = startOfDay(new Date());
   const monthEnd = endOfMonth(today);
 

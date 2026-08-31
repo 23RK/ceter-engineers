@@ -29,13 +29,23 @@ enum TaskPriority {
   URGENT
 }
 
-model User {
+// The single shared company login. There is normally just one row here -
+// both partners sign in with the same company email + password.
+model Credential {
   id           String   @id @default(cuid())
-  name         String
   email        String   @unique
   passwordHash String
-  color        String   @default("#2563eb")
   createdAt    DateTime @default(now())
+}
+
+// A partner's profile. Not a login - after signing in with the shared
+// Credential, each partner picks their own profile so tasks/activity can
+// be attributed to the right person.
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  color     String   @default("#2563eb")
+  createdAt DateTime @default(now())
 
   assignedTasks Task[]        @relation("AssignedTasks")
   createdTasks  Task[]        @relation("CreatedTasks")

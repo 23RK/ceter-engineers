@@ -25,7 +25,7 @@ export function LoginForm() {
           autoComplete="email"
           dir="ltr"
           className="rounded-lg border border-black/10 bg-white px-3.5 py-2.5 text-right text-sm shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
-          placeholder="name@keter-eng.co.il"
+          placeholder="keterengineers@gmail.com"
         />
       </div>
       <div className="flex flex-col gap-1.5">

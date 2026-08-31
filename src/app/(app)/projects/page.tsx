@@ -1,10 +1,10 @@
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth";
+import { requirePartner } from "@/lib/auth";
 import { ProjectCard } from "@/components/projects/project-card";
 import { NewProjectButton } from "@/components/projects/new-project-button";
 
 export default async function ProjectsPage() {
-  await requireUser();
+  await requirePartner();
 
   const projects = await prisma.project.findMany({
     include: {

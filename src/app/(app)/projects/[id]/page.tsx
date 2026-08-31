@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth";
+import { requirePartner } from "@/lib/auth";
 import { ProjectHeader } from "@/components/projects/project-header";
 import { ProjectMilestones } from "@/components/projects/project-milestones";
 import { ProjectTasks } from "@/components/projects/project-tasks";
@@ -10,7 +10,7 @@ export default async function ProjectDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireUser();
+  await requirePartner();
   const { id } = await params;
 
   const [project, users, projects] = await Promise.all([
