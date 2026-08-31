@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Repeat } from "lucide-react";
+import { Repeat, Settings } from "lucide-react";
 import { requirePartner } from "@/lib/auth";
 import { NavLinks } from "@/components/nav-links";
 import { LogoutButton } from "@/components/logout-button";
@@ -49,6 +49,13 @@ export default async function AppLayout({
             <Repeat size={16} />
             החלפת משתמש
           </Link>
+          <Link
+            href="/settings"
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-white/70 transition hover:bg-white/10 hover:text-white"
+          >
+            <Settings size={16} />
+            הגדרות
+          </Link>
           <LogoutButton />
         </div>
       </aside>
@@ -68,6 +75,13 @@ export default async function AppLayout({
             title="החלפת משתמש"
           >
             <Repeat size={16} />
+          </Link>
+          <Link
+            href="/settings"
+            className="rounded-lg p-2 text-white/70 transition hover:bg-white/10 hover:text-white"
+            title="הגדרות"
+          >
+            <Settings size={16} />
           </Link>
           <LogoutButton />
         </div>
