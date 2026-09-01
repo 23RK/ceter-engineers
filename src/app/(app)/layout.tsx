@@ -16,12 +16,8 @@ export default async function AppLayout({
     <div className="min-h-screen bg-background md:flex">
       {/* Sidebar - desktop */}
       <aside className="hidden w-64 shrink-0 flex-col bg-brand-950 px-4 py-6 md:flex">
-        <div className="mb-8 flex items-center gap-3 px-1.5">
+        <div className="mb-8 px-1.5">
           <Logo size="md" />
-          <div>
-            <p className="text-sm font-bold text-white">כתר הנדסה</p>
-            <p className="text-xs text-white/50">ניהול ופיקוח פרויקטים</p>
-          </div>
         </div>
 
         <NavLinks />
@@ -61,10 +57,7 @@ export default async function AppLayout({
 
       {/* Top bar - mobile */}
       <header className="sticky top-0 z-20 flex items-center justify-between gap-3 bg-brand-950 px-4 py-3 md:hidden">
-        <div className="flex items-center gap-2.5">
-          <Logo size="sm" />
-          <p className="text-sm font-bold text-white">כתר הנדסה</p>
-        </div>
+        <Logo size="sm" />
         <div className="flex items-center gap-1">
           <Link
             href="/choose-user"

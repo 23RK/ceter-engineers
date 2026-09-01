@@ -14,8 +14,8 @@ export default async function ChooseUserPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-brand-950 via-brand-900 to-brand-800 px-4">
       <div className="w-full max-w-sm rounded-2xl bg-white/95 p-8 shadow-2xl backdrop-blur">
-        <div className="mb-6 flex flex-col items-center gap-2 text-center">
-          <Logo size="lg" />
+        <div className="mb-6 flex flex-col items-center gap-3 text-center">
+          <Logo size="lg" variant="black" />
           <h1 className="text-lg font-bold text-brand-900">מי מתחבר?</h1>
           <p className="text-sm text-black/50">
             בחרו את השם שלכם כדי להמשיך
