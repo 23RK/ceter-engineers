@@ -36,6 +36,11 @@ enum LeadStatus {
   LOST
 }
 
+enum GoogleSyncStatus {
+  SYNCED
+  ERROR
+}
+
 // The single shared company login. There is normally just one row here -
 // both partners sign in with the same company email + password.
 model Credential {
@@ -58,6 +63,8 @@ model User {
   createdTasks  Task[]        @relation("CreatedTasks")
   activities    Activity[]
   meetings      Meeting[]
+  googleAccount GoogleAccount?
+  meetingSyncs  MeetingGoogleSync[]
 }
 
 model Project {
@@ -155,6 +162,38 @@ model Meeting {
   createdById String
 
   leadTask LeadTask?
+  syncs    MeetingGoogleSync[]
+}
+
+// One row per partner who has connected their Gmail account for Calendar
+// sync. Access/refresh tokens are stored encrypted (see src/lib/crypto.ts).
+model GoogleAccount {
+  id                    String   @id @default(cuid())
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId                String   @unique
+  googleEmail           String
+  encryptedAccessToken  String
+  encryptedRefreshToken String
+  accessTokenExpiresAt  DateTime
+  calendarId            String   @default("primary")
+  lastSyncedAt          DateTime?
+  createdAt             DateTime @default(now())
+}
+
+// One row per partner whose Google Calendar a given Meeting is pushed to -
+// two partners can each have their own copy of the same meeting.
+model MeetingGoogleSync {
+  id            String           @id @default(cuid())
+  meeting       Meeting          @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  meetingId     String
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  googleEventId String
+  googleUpdated DateTime? // Google's `updated` timestamp - used for last-write-wins
+  status        GoogleSyncStatus @default(SYNCED)
+
+  @@unique([meetingId, userId])
+  @@unique([userId, googleEventId])
 }
 
 model Activity {

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronRight, ChevronLeft } from "lucide-react";
+import { ChevronRight, ChevronLeft, CircleCheck, CircleAlert } from "lucide-react";
 import {
   addMonths,
   endOfMonth,
@@ -12,16 +12,26 @@ import {
 import { he } from "date-fns/locale";
 import { prisma } from "@/lib/prisma";
 import { requirePartner } from "@/lib/auth";
+import { isGoogleConfigured } from "@/lib/google/oauth";
+import { pullGoogleUpdates } from "@/lib/google/sync";
 import { MonthGrid } from "@/components/calendar/month-grid";
 import { AddMeetingButton } from "@/components/calendar/add-meeting-button";
+import { GoogleConnectCard } from "@/components/calendar/google-connect-card";
 
 export default async function CalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ y?: string; m?: string }>;
+  searchParams: Promise<{ y?: string; m?: string; google_connected?: string; google_error?: string }>;
 }) {
-  await requirePartner();
-  const { y, m } = await searchParams;
+  const partner = await requirePartner();
+  const { y, m, google_connected, google_error } = await searchParams;
+
+  const googleConfigured = isGoogleConfigured();
+  if (googleConfigured) {
+    // Best-effort pull so the grid below reflects any changes made
+    // directly in Google Calendar since the last visit.
+    await pullGoogleUpdates().catch(() => {});
+  }
 
   const today = new Date();
   const year = Number(y) || today.getFullYear();
@@ -32,10 +42,24 @@ export default async function CalendarPage({
   const gridStart = startOfWeek(startOfMonth(monthDate), { weekStartsOn: 0 });
   const gridEnd = endOfWeek(endOfMonth(monthDate), { weekStartsOn: 0 });
 
-  const meetings = await prisma.meeting.findMany({
-    where: { startTime: { gte: gridStart, lte: gridEnd } },
-    orderBy: { startTime: "asc" },
-  });
+  const [meetings, partners, googleAccounts] = await Promise.all([
+    prisma.meeting.findMany({
+      where: { startTime: { gte: gridStart, lte: gridEnd } },
+      orderBy: { startTime: "asc" },
+    }),
+    prisma.user.findMany({
+      select: { id: true, name: true, color: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.googleAccount.findMany(),
+  ]);
+
+  const connections = Object.fromEntries(
+    googleAccounts.map((a) => [
+      a.userId,
+      { googleEmail: a.googleEmail, lastSyncedAt: a.lastSyncedAt },
+    ])
+  );
 
   const prevMonth = subMonths(monthDate, 1);
   const nextMonth = addMonths(monthDate, 1);
@@ -59,6 +83,19 @@ export default async function CalendarPage({
         <AddMeetingButton defaultStart={dayStart} defaultEnd={dayEnd} />
       </div>
 
+      {google_connected && (
+        <p className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
+          <CircleCheck size={15} />
+          חשבון ה-Google שלך חובר בהצלחה.
+        </p>
+      )}
+      {google_error && (
+        <p className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          <CircleAlert size={15} />
+          החיבור ל-Google נכשל ({google_error}). נסו שוב.
+        </p>
+      )}
+
       <div className="flex items-center justify-center gap-3">
         <Link
           href={monthHref(prevMonth)}
@@ -78,6 +115,13 @@ export default async function CalendarPage({
       </div>
 
       <MonthGrid monthDate={monthDate} meetings={meetings} />
+
+      <GoogleConnectCard
+        partners={partners}
+        connections={connections}
+        currentPartnerId={partner.id}
+        googleConfigured={googleConfigured}
+      />
     </div>
   );
 }

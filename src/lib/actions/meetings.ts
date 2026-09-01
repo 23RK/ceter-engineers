@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requirePartner } from "@/lib/auth";
+import { isGoogleConfigured } from "@/lib/google/oauth";
+import {
+  deleteMeetingFromGoogleForAll,
+  pushMeetingToAllConnectedPartners,
+} from "@/lib/google/calendar";
 import type { ActionState } from "@/lib/actions/tasks";
 
 export type { ActionState };
@@ -39,6 +44,14 @@ function readMeetingFields(formData: FormData) {
   } as const;
 }
 
+// Push is best-effort and never blocks the save - if Google isn't
+// configured yet, or a partner isn't connected, this just no-ops.
+async function pushToGoogle(meeting: { id: string }) {
+  if (!isGoogleConfigured()) return;
+  const full = await prisma.meeting.findUnique({ where: { id: meeting.id } });
+  if (full) await pushMeetingToAllConnectedPartners(full);
+}
+
 export async function createMeeting(
   _prev: ActionState,
   formData: FormData
@@ -48,9 +61,10 @@ export async function createMeeting(
   const fields = readMeetingFields(formData);
   if ("error" in fields) return fields;
 
-  await prisma.meeting.create({
+  const meeting = await prisma.meeting.create({
     data: { ...fields, createdById: user.id },
   });
+  await pushToGoogle(meeting);
 
   revalidatePath("/calendar");
   return { ok: true, ts: Date.now() };
@@ -80,6 +94,7 @@ export async function createMeetingForLeadTask(
     where: { id: leadTaskId },
     data: { meetingId: meeting.id },
   });
+  await pushToGoogle(meeting);
 
   revalidatePath("/calendar");
   revalidatePath(`/business-dev/${leadTask.leadId}`);
@@ -96,10 +111,11 @@ export async function updateMeeting(
   const fields = readMeetingFields(formData);
   if ("error" in fields) return fields;
 
-  await prisma.meeting.update({
+  const meeting = await prisma.meeting.update({
     where: { id: meetingId },
     data: fields,
   });
+  await pushToGoogle(meeting);
 
   revalidatePath("/calendar");
   return { ok: true, ts: Date.now() };
@@ -107,6 +123,9 @@ export async function updateMeeting(
 
 export async function deleteMeeting(meetingId: string) {
   await requirePartner();
+  if (isGoogleConfigured()) {
+    await deleteMeetingFromGoogleForAll(meetingId);
+  }
   await prisma.meeting.delete({ where: { id: meetingId } });
   revalidatePath("/calendar");
 }
