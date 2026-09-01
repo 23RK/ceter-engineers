@@ -1,4 +1,9 @@
-import type { ProjectStatus, TaskPriority, TaskStatus } from "@prisma/client";
+import type {
+  LeadStatus,
+  ProjectStatus,
+  TaskPriority,
+  TaskStatus,
+} from "@prisma/client";
 
 export const TASK_STATUSES: {
   value: TaskStatus;
@@ -70,6 +75,29 @@ export const PROJECT_STATUSES: {
   { value: "DONE", label: "הושלם", badge: "bg-slate-200 text-slate-700" },
   { value: "CANCELED", label: "בוטל", badge: "bg-red-100 text-red-700" },
 ];
+
+export const LEAD_STATUSES: {
+  value: LeadStatus;
+  label: string;
+  badge: string;
+}[] = [
+  {
+    value: "IN_PROGRESS",
+    label: "בטיפול",
+    badge: "bg-blue-100 text-blue-700",
+  },
+  {
+    value: "PENDING",
+    label: "בהמתנה",
+    badge: "bg-amber-100 text-amber-700",
+  },
+  { value: "WON", label: "נסגר", badge: "bg-green-100 text-green-700" },
+  { value: "LOST", label: "נדחה", badge: "bg-red-100 text-red-700" },
+];
+
+export function leadStatusMeta(status: LeadStatus) {
+  return LEAD_STATUSES.find((s) => s.value === status)!;
+}
 
 export function taskStatusMeta(status: TaskStatus) {
   return TASK_STATUSES.find((s) => s.value === status)!;

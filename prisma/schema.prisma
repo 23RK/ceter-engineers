@@ -29,6 +29,13 @@ enum TaskPriority {
   URGENT
 }
 
+enum LeadStatus {
+  IN_PROGRESS
+  PENDING
+  WON
+  LOST
+}
+
 // The single shared company login. There is normally just one row here -
 // both partners sign in with the same company email + password.
 model Credential {
@@ -102,6 +109,31 @@ model Task {
 
   createdBy   User   @relation("CreatedTasks", fields: [createdById], references: [id])
   createdById String
+}
+
+// A prospective new project we're chasing (business development), kept
+// separate from Project (existing, won work being executed).
+model Lead {
+  id        String     @id @default(cuid())
+  name      String // client / developer name
+  status    LeadStatus @default(IN_PROGRESS)
+  notes     String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  tasks LeadTask[]
+}
+
+model LeadTask {
+  id        String     @id @default(cuid())
+  title     String // free text - not a closed list
+  status    TaskStatus @default(TODO)
+  dueDate   DateTime?
+  order     Int        @default(0)
+  createdAt DateTime   @default(now())
+
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String
 }
 
 model Activity {
