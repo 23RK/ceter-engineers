@@ -57,6 +57,7 @@ model User {
   assignedTasks Task[]        @relation("AssignedTasks")
   createdTasks  Task[]        @relation("CreatedTasks")
   activities    Activity[]
+  meetings      Meeting[]
 }
 
 model Project {
@@ -134,6 +135,26 @@ model LeadTask {
 
   lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
   leadId String
+
+  // Optional link to a scheduled meeting (e.g. a "קביעת פגישה" task).
+  meeting   Meeting? @relation(fields: [meetingId], references: [id])
+  meetingId String?  @unique
+}
+
+model Meeting {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  location    String?
+  startTime   DateTime
+  endTime     DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy   User   @relation(fields: [createdById], references: [id])
+  createdById String
+
+  leadTask LeadTask?
 }
 
 model Activity {

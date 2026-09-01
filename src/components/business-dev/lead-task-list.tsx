@@ -1,23 +1,27 @@
 "use client";
 
 import { useActionState } from "react";
-import { ListChecks, Trash2 } from "lucide-react";
+import { CalendarPlus, ListChecks, Trash2 } from "lucide-react";
 import {
   createLeadTask,
   deleteLeadTask,
   setLeadTaskStatus,
   type ActionState,
 } from "@/lib/actions/leads";
+import { Modal } from "@/components/ui/modal";
+import { MeetingForm } from "@/components/calendar/meeting-form";
 import { TASK_STATUSES } from "@/lib/constants";
-import { formatDateShort, isOverdue } from "@/lib/format";
-import type { LeadTask, TaskStatus } from "@prisma/client";
+import { formatDate, formatDateShort, isOverdue } from "@/lib/format";
+import type { LeadTask, Meeting, TaskStatus } from "@prisma/client";
+
+type LeadTaskWithMeeting = LeadTask & { meeting: Meeting | null };
 
 export function LeadTaskList({
   leadId,
   tasks,
 }: {
   leadId: string;
-  tasks: LeadTask[];
+  tasks: LeadTaskWithMeeting[];
 }) {
   return (
     <div className="rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
@@ -43,7 +47,7 @@ export function LeadTaskList({
   );
 }
 
-function LeadTaskRow({ task }: { task: LeadTask }) {
+function LeadTaskRow({ task }: { task: LeadTaskWithMeeting }) {
   const overdue = isOverdue(task.dueDate) && task.status !== "DONE";
 
   return (
@@ -58,13 +62,52 @@ function LeadTaskRow({ task }: { task: LeadTask }) {
         >
           {task.title}
         </p>
-        {task.dueDate && (
-          <p
-            className={`text-xs ${overdue ? "font-medium text-red-500" : "text-black/40"}`}
-          >
-            {formatDateShort(task.dueDate)}
-          </p>
-        )}
+        <div className="flex flex-wrap items-center gap-x-3 text-xs">
+          {task.dueDate && (
+            <span
+              className={overdue ? "font-medium text-red-500" : "text-black/40"}
+            >
+              יעד: {formatDateShort(task.dueDate)}
+            </span>
+          )}
+          {task.meeting ? (
+            <span className="text-brand-600">
+              נקבעה פגישה: {formatDate(task.meeting.startTime)}
+            </span>
+          ) : (
+            <Modal
+              title="קביעת פגישה"
+              trigger={
+                <button
+                  type="button"
+                  className="flex items-center gap-1 text-black/35 transition hover:text-brand-600"
+                >
+                  <CalendarPlus size={12} />
+                  קביעת פגישה
+                </button>
+              }
+            >
+              {(close) => {
+                const base = task.dueDate
+                  ? new Date(task.dueDate)
+                  : new Date();
+                const defaultStart = new Date(base);
+                defaultStart.setHours(9, 0, 0, 0);
+                const defaultEnd = new Date(base);
+                defaultEnd.setHours(10, 0, 0, 0);
+                return (
+                  <MeetingForm
+                    forLeadTaskId={task.id}
+                    defaultTitle={task.title}
+                    defaultStart={defaultStart}
+                    defaultEnd={defaultEnd}
+                    onClose={close}
+                  />
+                );
+              }}
+            </Modal>
+          )}
+        </div>
       </div>
 
       <div className="flex shrink-0 items-center gap-2">

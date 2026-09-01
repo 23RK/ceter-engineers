@@ -15,7 +15,7 @@ export default async function LeadDetailPage({
   const lead = await prisma.lead.findUnique({
     where: { id },
     include: {
-      tasks: { orderBy: { order: "asc" } },
+      tasks: { orderBy: { order: "asc" }, include: { meeting: true } },
     },
   });
 

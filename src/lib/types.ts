@@ -1,6 +1,7 @@
 import type {
   Lead,
   LeadTask,
+  Meeting,
   Milestone,
   Project,
   Task,
@@ -22,4 +23,8 @@ export type ProjectWithRelations = Project & {
 
 export type LeadWithTasks = Lead & {
   tasks: LeadTask[];
+};
+
+export type MeetingWithCreator = Meeting & {
+  createdBy: UserOption;
 };
