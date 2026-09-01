@@ -168,16 +168,19 @@ model Meeting {
 // One row per partner who has connected their Gmail account for Calendar
 // sync. Access/refresh tokens are stored encrypted (see src/lib/crypto.ts).
 model GoogleAccount {
-  id                    String   @id @default(cuid())
-  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId                String   @unique
+  id                    String    @id @default(cuid())
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId                String    @unique
   googleEmail           String
   encryptedAccessToken  String
   encryptedRefreshToken String
   accessTokenExpiresAt  DateTime
-  calendarId            String   @default("primary")
+  // Id of the dedicated "כתר הנדסה" calendar created in the partner's
+  // Google account on connect - never "primary". Keeps business meetings
+  // fully separate from (and never reading) their personal calendar.
+  calendarId            String
   lastSyncedAt          DateTime?
-  createdAt             DateTime @default(now())
+  createdAt             DateTime  @default(now())
 }
 
 // One row per partner whose Google Calendar a given Meeting is pushed to -

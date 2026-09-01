@@ -3,11 +3,20 @@ import { google } from "googleapis";
 import { prisma } from "@/lib/prisma";
 import { encrypt, decrypt } from "@/lib/crypto";
 
+// Full "calendar" scope (not just calendar.events) - needed so we can
+// create the dedicated business calendar below, not just read/write
+// events on whatever calendar we're pointed at.
 export const GOOGLE_SCOPES = [
-  "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/calendar",
   "https://www.googleapis.com/auth/userinfo.email",
   "openid",
 ];
+
+// The app never touches a partner's primary (personal) calendar - it
+// creates and only ever uses this separate, clearly-named calendar in
+// their Google account, so business meetings never mix with personal
+// ones and neither partner can see the other's actual personal calendar.
+const BUSINESS_CALENDAR_NAME = "כתר הנדסה - פגישות עסקיות";
 
 function getAppUrl() {
   const url = process.env.APP_URL;
@@ -45,6 +54,32 @@ export function getGoogleAuthUrl(partnerId: string) {
   });
 }
 
+/**
+ * Finds this partner's dedicated business calendar if they already have
+ * one (e.g. reconnecting), otherwise creates it. Never returns "primary".
+ */
+async function getOrCreateBusinessCalendarId(
+  client: InstanceType<typeof google.auth.OAuth2>
+): Promise<string> {
+  const calendar = google.calendar({ version: "v3", auth: client });
+
+  const { data: list } = await calendar.calendarList.list({
+    minAccessRole: "owner",
+  });
+  const existing = list.items?.find(
+    (item) => item.summary === BUSINESS_CALENDAR_NAME
+  );
+  if (existing?.id) return existing.id;
+
+  const { data: created } = await calendar.calendars.insert({
+    requestBody: { summary: BUSINESS_CALENDAR_NAME },
+  });
+  if (!created.id) {
+    throw new Error("Google did not return an id for the new calendar");
+  }
+  return created.id;
+}
+
 export async function connectGoogleAccount(partnerId: string, code: string) {
   const client = createOAuthClient();
   const { tokens } = await client.getToken(code);
@@ -57,6 +92,7 @@ export async function connectGoogleAccount(partnerId: string, code: string) {
   client.setCredentials(tokens);
   const oauth2 = google.oauth2({ version: "v2", auth: client });
   const { data } = await oauth2.userinfo.get();
+  const calendarId = await getOrCreateBusinessCalendarId(client);
 
   await prisma.googleAccount.upsert({
     where: { userId: partnerId },
@@ -66,12 +102,14 @@ export async function connectGoogleAccount(partnerId: string, code: string) {
       encryptedAccessToken: encrypt(tokens.access_token),
       encryptedRefreshToken: encrypt(tokens.refresh_token),
       accessTokenExpiresAt: new Date(tokens.expiry_date ?? Date.now() + 3600_000),
+      calendarId,
     },
     update: {
       googleEmail: data.email ?? "",
       encryptedAccessToken: encrypt(tokens.access_token),
       encryptedRefreshToken: encrypt(tokens.refresh_token),
       accessTokenExpiresAt: new Date(tokens.expiry_date ?? Date.now() + 3600_000),
+      calendarId,
     },
   });
 }
