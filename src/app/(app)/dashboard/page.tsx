@@ -6,6 +6,8 @@ import {
   Building2,
   Flag,
   Calendar,
+  CalendarDays,
+  Handshake,
   Activity as ActivityIcon,
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
@@ -13,7 +15,12 @@ import { requirePartner } from "@/lib/auth";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { taskPriorityMeta, PROJECT_STATUSES } from "@/lib/constants";
-import { formatDate, formatDateShort, isOverdue } from "@/lib/format";
+import {
+  formatDate,
+  formatDateShort,
+  formatTime,
+  isOverdue,
+} from "@/lib/format";
 
 export default async function DashboardPage() {
   const user = await requirePartner();
@@ -30,6 +37,9 @@ export default async function DashboardPage() {
     activities,
     projectStatusCounts,
     users,
+    upcomingMeetings,
+    openLeadsCount,
+    urgentLeadTasks,
   ] = await Promise.all([
     prisma.task.count({ where: { status: { not: "DONE" } } }),
     prisma.task.count({
@@ -56,6 +66,20 @@ export default async function DashboardPage() {
     }),
     prisma.project.groupBy({ by: ["status"], _count: true }),
     prisma.user.findMany({ orderBy: { name: "asc" } }),
+    prisma.meeting.findMany({
+      where: { startTime: { gte: new Date() } },
+      orderBy: { startTime: "asc" },
+      take: 5,
+    }),
+    prisma.lead.count({
+      where: { status: { in: ["IN_PROGRESS", "PENDING"] } },
+    }),
+    prisma.leadTask.findMany({
+      where: { status: { not: "DONE" }, dueDate: { not: null } },
+      orderBy: { dueDate: "asc" },
+      take: 4,
+      include: { lead: { select: { id: true, name: true } } },
+    }),
   ]);
 
   const workloadByUser = users.map((u) => {
@@ -195,6 +219,46 @@ export default async function DashboardPage() {
               </div>
             )}
           </section>
+
+          {/* Upcoming meetings */}
+          <section className="rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
+            <div className="mb-4 flex items-center gap-2">
+              <CalendarDays size={16} className="text-brand-600" />
+              <h2 className="text-sm font-bold text-brand-900">
+                פגישות קרובות
+              </h2>
+            </div>
+            {upcomingMeetings.length === 0 ? (
+              <p className="text-sm text-black/40">
+                אין פגישות קרובות ביומן.
+              </p>
+            ) : (
+              <div className="flex flex-col divide-y divide-black/5">
+                {upcomingMeetings.map((meeting) => (
+                  <Link
+                    key={meeting.id}
+                    href="/calendar"
+                    className="flex items-center justify-between gap-3 py-2.5 transition hover:opacity-70"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-brand-900">
+                        {meeting.title}
+                      </p>
+                      {meeting.location && (
+                        <p className="truncate text-xs text-black/40">
+                          {meeting.location}
+                        </p>
+                      )}
+                    </div>
+                    <span className="shrink-0 text-xs font-medium text-black/40">
+                      {formatDateShort(meeting.startTime)} ·{" "}
+                      {formatTime(meeting.startTime)}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
 
         <div className="flex flex-col gap-5">
@@ -221,6 +285,53 @@ export default async function DashboardPage() {
                 );
               })}
             </div>
+          </section>
+
+          {/* Business dev summary */}
+          <section className="rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Handshake size={16} className="text-brand-600" />
+                <h2 className="text-sm font-bold text-brand-900">
+                  פיתוח עסקי
+                </h2>
+              </div>
+              <span className="text-xs font-medium text-black/40">
+                {openLeadsCount} הזדמנויות פתוחות
+              </span>
+            </div>
+            {urgentLeadTasks.length === 0 ? (
+              <p className="text-sm text-black/40">
+                אין משימות דחופות בפיתוח עסקי.
+              </p>
+            ) : (
+              <div className="flex flex-col divide-y divide-black/5">
+                {urgentLeadTasks.map((task) => {
+                  const overdue = isOverdue(task.dueDate);
+                  return (
+                    <Link
+                      key={task.id}
+                      href={`/business-dev/${task.lead.id}`}
+                      className="flex items-center justify-between gap-3 py-2.5 transition hover:opacity-70"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-brand-900">
+                          {task.title}
+                        </p>
+                        <p className="truncate text-xs text-black/40">
+                          {task.lead.name}
+                        </p>
+                      </div>
+                      <span
+                        className={`shrink-0 text-xs font-medium ${overdue ? "text-red-600" : "text-black/40"}`}
+                      >
+                        {formatDateShort(task.dueDate)}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
           {/* Activity feed */}

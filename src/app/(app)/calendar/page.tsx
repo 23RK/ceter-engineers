@@ -17,6 +17,7 @@ import { pullGoogleUpdates } from "@/lib/google/sync";
 import { MonthGrid } from "@/components/calendar/month-grid";
 import { AddMeetingButton } from "@/components/calendar/add-meeting-button";
 import { GoogleConnectCard } from "@/components/calendar/google-connect-card";
+import { CalendarLegend } from "@/components/calendar/calendar-legend";
 
 export default async function CalendarPage({
   searchParams,
@@ -46,6 +47,7 @@ export default async function CalendarPage({
     prisma.meeting.findMany({
       where: { startTime: { gte: gridStart, lte: gridEnd } },
       orderBy: { startTime: "asc" },
+      include: { createdBy: { select: { id: true, name: true, color: true } } },
     }),
     prisma.user.findMany({
       select: { id: true, name: true, color: true },
@@ -115,6 +117,8 @@ export default async function CalendarPage({
       </div>
 
       <MonthGrid monthDate={monthDate} meetings={meetings} />
+
+      <CalendarLegend partners={partners} />
 
       <GoogleConnectCard
         partners={partners}

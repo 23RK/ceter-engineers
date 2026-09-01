@@ -10,7 +10,7 @@ import {
 } from "date-fns";
 import { AddMeetingButton } from "@/components/calendar/add-meeting-button";
 import { MeetingChip } from "@/components/calendar/meeting-chip";
-import type { Meeting } from "@prisma/client";
+import type { MeetingWithCreator } from "@/lib/types";
 
 const WEEKDAY_LABELS = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"];
 
@@ -19,13 +19,13 @@ export function MonthGrid({
   meetings,
 }: {
   monthDate: Date;
-  meetings: Meeting[];
+  meetings: MeetingWithCreator[];
 }) {
   const gridStart = startOfWeek(startOfMonth(monthDate), { weekStartsOn: 0 });
   const gridEnd = endOfWeek(endOfMonth(monthDate), { weekStartsOn: 0 });
   const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
 
-  const meetingsByDay = new Map<string, Meeting[]>();
+  const meetingsByDay = new Map<string, MeetingWithCreator[]>();
   for (const meeting of meetings) {
     const key = format(new Date(meeting.startTime), "yyyy-MM-dd");
     const list = meetingsByDay.get(key) ?? [];

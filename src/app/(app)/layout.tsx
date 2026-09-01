@@ -3,6 +3,7 @@ import { Repeat, Settings } from "lucide-react";
 import { requirePartner } from "@/lib/auth";
 import { NavLinks } from "@/components/nav-links";
 import { LogoutButton } from "@/components/logout-button";
+import { Logo } from "@/components/logo";
 
 export default async function AppLayout({
   children,
@@ -16,9 +17,7 @@ export default async function AppLayout({
       {/* Sidebar - desktop */}
       <aside className="hidden w-64 shrink-0 flex-col bg-brand-950 px-4 py-6 md:flex">
         <div className="mb-8 flex items-center gap-3 px-1.5">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">
-            כה
-          </div>
+          <Logo size="md" />
           <div>
             <p className="text-sm font-bold text-white">כתר הנדסה</p>
             <p className="text-xs text-white/50">ניהול ופיקוח פרויקטים</p>
@@ -63,9 +62,7 @@ export default async function AppLayout({
       {/* Top bar - mobile */}
       <header className="sticky top-0 z-20 flex items-center justify-between gap-3 bg-brand-950 px-4 py-3 md:hidden">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-xs font-bold text-white">
-            כה
-          </div>
+          <Logo size="sm" />
           <p className="text-sm font-bold text-white">כתר הנדסה</p>
         </div>
         <div className="flex items-center gap-1">
