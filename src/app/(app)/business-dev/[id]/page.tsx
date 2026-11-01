@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { requirePartner } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import { LeadHeader } from "@/components/business-dev/lead-header";
 import { LeadTaskList } from "@/components/business-dev/lead-task-list";
 
@@ -9,7 +9,7 @@ export default async function LeadDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requirePartner();
+  await requireUser();
   const { id } = await params;
 
   const lead = await prisma.lead.findUnique({

@@ -1,10 +1,10 @@
 import { prisma } from "@/lib/prisma";
-import { requirePartner } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import { LeadCard } from "@/components/business-dev/lead-card";
 import { NewLeadButton } from "@/components/business-dev/new-lead-button";
 
 export default async function BusinessDevPage() {
-  await requirePartner();
+  await requireUser();
 
   const leads = await prisma.lead.findMany({
     include: {

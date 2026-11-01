@@ -1,39 +1,51 @@
 import { PrismaClient } from "@prisma/client";
-import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-const COMPANY_EMAIL = "keterengineers@gmail.com";
-const DEFAULT_PASSWORD = "keter2026!";
-
 async function main() {
-  const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
-
-  // The single shared company login - both partners sign in with this.
-  await prisma.credential.upsert({
-    where: { email: COMPANY_EMAIL },
-    update: {},
-    create: { email: COMPANY_EMAIL, passwordHash },
-  });
-
-  // Partner profiles - picked after login to attribute tasks/activity.
+  // The sign-in allow-list: each person signs in with "Sign in with Google"
+  // using exactly this email. On an existing database these rows were
+  // already linked by the google_sign_in migration, so `update` stays empty
+  // (never overwrite names/colors someone changed).
   const ron = await prisma.user.upsert({
     where: { id: "partner-ron" },
     update: {},
-    create: { id: "partner-ron", name: "רון", color: "#2251e0" },
+    create: {
+      id: "partner-ron",
+      name: "רון",
+      email: "ronketerltd@gmail.com",
+      role: "PARTNER",
+      color: "#2251e0",
+    },
   });
 
   const guy = await prisma.user.upsert({
     where: { id: "partner-guy" },
     update: {},
-    create: { id: "partner-guy", name: "גיא", color: "#eda520" },
+    create: {
+      id: "partner-guy",
+      name: "גיא",
+      email: "guyketerltd@gmail.com",
+      role: "PARTNER",
+      color: "#eda520",
+    },
+  });
+
+  await prisma.user.upsert({
+    where: { id: "admin-keter" },
+    update: {},
+    create: {
+      id: "admin-keter",
+      name: "מנהל מערכת",
+      email: "keterengineers@gmail.com",
+      role: "ADMIN",
+      color: "#64748b",
+    },
   });
 
   const existingProjects = await prisma.project.count();
   if (existingProjects > 0) {
     console.log("כבר קיימים פרויקטים במסד הנתונים - מדלג על נתוני דוגמה.");
-    console.log("פרטי התחברות:");
-    console.log(`  ${COMPANY_EMAIL} / ${DEFAULT_PASSWORD}`);
     return;
   }
 
@@ -195,8 +207,6 @@ async function main() {
   });
 
   console.log("נתוני דוגמה נוצרו בהצלחה!");
-  console.log("פרטי התחברות (משותף לרון ולגיא):");
-  console.log(`  ${COMPANY_EMAIL} / ${DEFAULT_PASSWORD}`);
 }
 
 main()

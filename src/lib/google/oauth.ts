@@ -3,20 +3,23 @@ import { google } from "googleapis";
 import { prisma } from "@/lib/prisma";
 import { encrypt, decrypt } from "@/lib/crypto";
 
-// Full "calendar" scope (not just calendar.events) - needed so we can
-// create the dedicated business calendar below, not just read/write
-// events on whatever calendar we're pointed at.
-export const GOOGLE_SCOPES = [
-  "https://www.googleapis.com/auth/calendar",
-  "https://www.googleapis.com/auth/userinfo.email",
-  "openid",
-];
+const SIGN_IN_SCOPES = ["openid", "email"];
 
-// The app never touches a partner's primary (personal) calendar - it
-// creates and only ever uses this separate, clearly-named calendar in
-// their Google account, so business meetings never mix with personal
-// ones and neither partner can see the other's actual personal calendar.
-const BUSINESS_CALENDAR_NAME = "כתר הנדסה - פגישות עסקיות";
+// Read/write events on the partner's calendars (incl. push notifications via
+// events.watch). Narrower than the full "calendar" scope - the app no longer
+// creates calendars, it works on each partner's primary one.
+export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+
+const REQUIRED_ENV = [
+  "GOOGLE_CLIENT_ID",
+  "GOOGLE_CLIENT_SECRET",
+  "APP_URL",
+  "TOKEN_ENCRYPTION_KEY",
+] as const;
+
+export function missingGoogleEnv() {
+  return REQUIRED_ENV.filter((name) => !process.env[name]);
+}
 
 function getAppUrl() {
   const url = process.env.APP_URL;
@@ -24,94 +27,115 @@ function getAppUrl() {
   return url.replace(/\/$/, "");
 }
 
-export function isGoogleConfigured() {
-  return Boolean(
-    process.env.GOOGLE_CLIENT_ID &&
-      process.env.GOOGLE_CLIENT_SECRET &&
-      process.env.APP_URL &&
-      process.env.TOKEN_ENCRYPTION_KEY
-  );
+export function getRedirectUri() {
+  return `${getAppUrl()}/api/auth/google/callback`;
 }
 
 function createOAuthClient() {
   return new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    `${getAppUrl()}/api/google/callback`
+    getRedirectUri()
   );
 }
 
-/** `state` carries the connecting partner's id through the redirect. */
-export function getGoogleAuthUrl(partnerId: string) {
+export type OAuthMode = "signin" | "calendar";
+
+/**
+ * Two flavours of the same Google OAuth flow:
+ * - "signin": identity only (who are you?). Quick - no consent screen after
+ *   the first time, just the account picker.
+ * - "calendar": asks for calendar access with a forced consent screen, so
+ *   Google always hands back a refresh token. Run once per partner right
+ *   after their first sign-in, and again from Settings to reconnect.
+ */
+export function getGoogleAuthUrl({
+  mode,
+  state,
+  loginHint,
+}: {
+  mode: OAuthMode;
+  state: string;
+  loginHint?: string;
+}) {
   const client = createOAuthClient();
+  if (mode === "signin") {
+    return client.generateAuthUrl({
+      scope: SIGN_IN_SCOPES,
+      prompt: "select_account",
+      state,
+    });
+  }
   return client.generateAuthUrl({
+    scope: [...SIGN_IN_SCOPES, CALENDAR_SCOPE],
     access_type: "offline",
-    // Forces Google to always re-issue a refresh_token, even for a partner
-    // who connected before (otherwise it's only returned the first time).
     prompt: "consent",
-    scope: GOOGLE_SCOPES,
-    state: partnerId,
+    include_granted_scopes: true,
+    login_hint: loginHint,
+    state,
   });
 }
 
 /**
- * Finds this partner's dedicated business calendar if they already have
- * one (e.g. reconnecting), otherwise creates it. Never returns "primary".
+ * Exchanges the callback `code` and returns the Google account's verified
+ * email (from the signed ID token) plus the raw tokens.
  */
-async function getOrCreateBusinessCalendarId(
-  client: InstanceType<typeof google.auth.OAuth2>
-): Promise<string> {
-  const calendar = google.calendar({ version: "v3", auth: client });
-
-  const { data: list } = await calendar.calendarList.list({
-    minAccessRole: "owner",
-  });
-  const existing = list.items?.find(
-    (item) => item.summary === BUSINESS_CALENDAR_NAME
-  );
-  if (existing?.id) return existing.id;
-
-  const { data: created } = await calendar.calendars.insert({
-    requestBody: { summary: BUSINESS_CALENDAR_NAME },
-  });
-  if (!created.id) {
-    throw new Error("Google did not return an id for the new calendar");
-  }
-  return created.id;
-}
-
-export async function connectGoogleAccount(partnerId: string, code: string) {
+export async function exchangeCode(code: string) {
   const client = createOAuthClient();
   const { tokens } = await client.getToken(code);
-  if (!tokens.access_token || !tokens.refresh_token) {
-    throw new Error(
-      "Google לא החזיר refresh token - נסו להתחבר שוב ולוודא אישור מלא"
-    );
+  if (!tokens.id_token) throw new Error("Google did not return an ID token");
+
+  const ticket = await client.verifyIdToken({
+    idToken: tokens.id_token,
+    audience: process.env.GOOGLE_CLIENT_ID,
+  });
+  const payload = ticket.getPayload();
+  if (!payload?.email || !payload.email_verified) {
+    throw new Error("Google account has no verified email");
   }
 
-  client.setCredentials(tokens);
-  const oauth2 = google.oauth2({ version: "v2", auth: client });
-  const { data } = await oauth2.userinfo.get();
-  const calendarId = await getOrCreateBusinessCalendarId(client);
+  const grantedScopes = (tokens.scope ?? "").split(" ");
+  return {
+    email: payload.email.toLowerCase(),
+    tokens,
+    hasCalendarScope: grantedScopes.includes(CALENDAR_SCOPE),
+  };
+}
 
+/** Stores (encrypted) the tokens that let the server sync this partner's calendar. */
+export async function saveCalendarTokens(
+  userId: string,
+  googleEmail: string,
+  tokens: Awaited<ReturnType<typeof exchangeCode>>["tokens"]
+) {
+  if (!tokens.access_token || !tokens.refresh_token) {
+    throw new Error("Google did not return a refresh token");
+  }
+  const data = {
+    googleEmail,
+    encryptedAccessToken: encrypt(tokens.access_token),
+    encryptedRefreshToken: encrypt(tokens.refresh_token),
+    accessTokenExpiresAt: new Date(tokens.expiry_date ?? Date.now() + 3600_000),
+    calendarId: "primary",
+  };
   await prisma.googleAccount.upsert({
-    where: { userId: partnerId },
-    create: {
-      userId: partnerId,
-      googleEmail: data.email ?? "",
-      encryptedAccessToken: encrypt(tokens.access_token),
-      encryptedRefreshToken: encrypt(tokens.refresh_token),
-      accessTokenExpiresAt: new Date(tokens.expiry_date ?? Date.now() + 3600_000),
-      calendarId,
-    },
-    update: {
-      googleEmail: data.email ?? "",
-      encryptedAccessToken: encrypt(tokens.access_token),
-      encryptedRefreshToken: encrypt(tokens.refresh_token),
-      accessTokenExpiresAt: new Date(tokens.expiry_date ?? Date.now() + 3600_000),
-      calendarId,
-    },
+    where: { userId },
+    create: { userId, ...data },
+    update: data,
   });
+}
+
+/**
+ * Whether this partner's stored calendar connection belongs to their own
+ * sign-in email. Connections made before the move to per-user sign-in may
+ * point at a different Gmail account and need to be re-granted.
+ */
+export async function hasCalendarConnection(userId: string, email: string) {
+  const account = await prisma.googleAccount.findUnique({
+    where: { userId },
+    select: { googleEmail: true },
+  });
+  return account?.googleEmail.toLowerCase() === email;
 }
 
 /**
@@ -151,8 +175,4 @@ export async function getAuthorizedClientFor(userId: string) {
   });
 
   return { client, account };
-}
-
-export async function disconnectGoogleAccount(userId: string) {
-  await prisma.googleAccount.delete({ where: { userId } }).catch(() => {});
 }

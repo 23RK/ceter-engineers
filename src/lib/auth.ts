@@ -2,17 +2,18 @@ import "server-only";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import { redirect } from "next/navigation";
+import type { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 
-export type Partner = {
+export type CurrentUser = {
   id: string;
   name: string;
+  email: string;
+  role: UserRole;
   color: string;
 };
 
-// Verifies the shared company login only - does not guarantee a partner
-// (רון / גיא) has been picked yet.
 export const getSession = cache(async () => {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
@@ -20,29 +21,32 @@ export const getSession = cache(async () => {
   return verifySessionToken(token);
 });
 
-export const getCurrentPartner = cache(async (): Promise<Partner | null> => {
+/**
+ * The signed-in user, re-read from the DB on every request (once per
+ * request, via `cache`) - so removing someone's email from the User table
+ * locks them out immediately, even with a still-valid session cookie.
+ */
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const session = await getSession();
-  if (!session?.partnerId) return null;
+  if (!session) return null;
 
   const user = await prisma.user.findUnique({
-    where: { id: session.partnerId },
-    select: { id: true, name: true, color: true },
+    where: { id: session.userId },
+    select: { id: true, name: true, email: true, role: true, color: true },
   });
+  if (!user?.email) return null;
 
-  return user;
+  return { ...user, email: user.email };
 });
 
-/** Requires the shared login only; does not require a partner to be picked. */
-export async function requireSession() {
-  const session = await getSession();
-  if (!session) redirect("/login");
-  return session;
+/** Every page and Server Action calls this - the proxy alone isn't enough. */
+export async function requireUser(): Promise<CurrentUser> {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  return user;
 }
 
-/** Requires the shared login AND a partner to have been picked. */
-export async function requirePartner(): Promise<Partner> {
-  await requireSession();
-  const partner = await getCurrentPartner();
-  if (!partner) redirect("/choose-user");
-  return partner;
-}
+export const ROLE_LABELS: Record<UserRole, string> = {
+  ADMIN: "מנהל מערכת",
+  PARTNER: "שותף",
+};

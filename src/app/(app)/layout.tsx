@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { Repeat, Settings } from "lucide-react";
-import { requirePartner } from "@/lib/auth";
+import { Settings } from "lucide-react";
+import { ROLE_LABELS, requireUser } from "@/lib/auth";
 import { NavLinks } from "@/components/nav-links";
 import { LogoutButton } from "@/components/logout-button";
 import { Logo } from "@/components/logo";
@@ -10,7 +10,7 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const user = await requirePartner();
+  const user = await requireUser();
 
   return (
     <div className="min-h-screen bg-background md:flex">
@@ -34,16 +34,11 @@ export default async function AppLayout({
               <p className="truncate text-sm font-medium text-white">
                 {user.name}
               </p>
-              <p className="truncate text-xs text-white/40">שותף מחובר</p>
+              <p className="truncate text-xs text-white/40">
+                {ROLE_LABELS[user.role]}
+              </p>
             </div>
           </div>
-          <Link
-            href="/choose-user"
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-white/70 transition hover:bg-white/10 hover:text-white"
-          >
-            <Repeat size={16} />
-            החלפת משתמש
-          </Link>
           <Link
             href="/settings"
             className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-white/70 transition hover:bg-white/10 hover:text-white"
@@ -59,13 +54,6 @@ export default async function AppLayout({
       <header className="sticky top-0 z-20 flex items-center justify-between gap-3 bg-brand-950 px-4 py-3 md:hidden">
         <Logo size="sm" />
         <div className="flex items-center gap-1">
-          <Link
-            href="/choose-user"
-            className="rounded-lg p-2 text-white/70 transition hover:bg-white/10 hover:text-white"
-            title="החלפת משתמש"
-          >
-            <Repeat size={16} />
-          </Link>
           <Link
             href="/settings"
             className="rounded-lg p-2 text-white/70 transition hover:bg-white/10 hover:text-white"

@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/prisma";
-import { requirePartner } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import { TasksClient } from "@/components/tasks/tasks-client";
 
 export default async function TasksPage() {
-  await requirePartner();
+  await requireUser();
 
   const [tasks, users, projects] = await Promise.all([
     prisma.task.findMany({
@@ -11,6 +11,7 @@ export default async function TasksPage() {
       orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
     }),
     prisma.user.findMany({
+      where: { role: "PARTNER" },
       select: { id: true, name: true, color: true },
       orderBy: { name: "asc" },
     }),
