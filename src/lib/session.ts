@@ -11,8 +11,11 @@ function getSecretKey() {
   return new TextEncoder().encode(secret);
 }
 
+// Presence of a valid, signed cookie means the shared company login
+// succeeded. `partnerId` is set once the signed-in person picks which
+// partner they are (רון / גיא) - it's absent right after login.
 export type SessionPayload = {
-  userId: string;
+  partnerId?: string;
 };
 
 export async function signSession(payload: SessionPayload): Promise<string> {
@@ -28,8 +31,9 @@ export async function verifySessionToken(
 ): Promise<SessionPayload | null> {
   try {
     const { payload } = await jwtVerify(token, getSecretKey());
-    if (typeof payload.userId !== "string") return null;
-    return { userId: payload.userId };
+    const partnerId =
+      typeof payload.partnerId === "string" ? payload.partnerId : undefined;
+    return { partnerId };
   } catch {
     return null;
   }

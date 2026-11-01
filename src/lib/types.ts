@@ -1,4 +1,12 @@
-import type { Milestone, Project, Task, User } from "@prisma/client";
+import type {
+  Lead,
+  LeadTask,
+  Meeting,
+  Milestone,
+  Project,
+  Task,
+  User,
+} from "@prisma/client";
 
 export type TaskWithRelations = Task & {
   assignee: User | null;
@@ -11,4 +19,12 @@ export type ProjectOption = Pick<Project, "id" | "name" | "status">;
 export type ProjectWithRelations = Project & {
   milestones: Milestone[];
   tasks: TaskWithRelations[];
+};
+
+export type LeadWithTasks = Lead & {
+  tasks: LeadTask[];
+};
+
+export type MeetingWithCreator = Meeting & {
+  createdBy: UserOption;
 };

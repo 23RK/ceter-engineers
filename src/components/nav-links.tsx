@@ -2,12 +2,20 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, ListChecks, Building2 } from "lucide-react";
+import {
+  LayoutDashboard,
+  ListChecks,
+  Building2,
+  Handshake,
+  CalendarDays,
+} from "lucide-react";
 
 const links = [
   { href: "/dashboard", label: "לוח בקרה", icon: LayoutDashboard },
   { href: "/tasks", label: "משימות", icon: ListChecks },
   { href: "/projects", label: "פרויקטים", icon: Building2 },
+  { href: "/calendar", label: "יומן פגישות", icon: CalendarDays },
+  { href: "/business-dev", label: "פיתוח עסקי", icon: Handshake },
 ];
 
 export function NavLinks({

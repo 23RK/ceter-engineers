@@ -3,39 +3,37 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
+const COMPANY_EMAIL = "keterengineers@gmail.com";
 const DEFAULT_PASSWORD = "keter2026!";
 
 async function main() {
   const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
 
-  const ron = await prisma.user.upsert({
-    where: { email: "ronkokaltd@gmail.com" },
+  // The single shared company login - both partners sign in with this.
+  await prisma.credential.upsert({
+    where: { email: COMPANY_EMAIL },
     update: {},
-    create: {
-      name: "רון",
-      email: "ronkokaltd@gmail.com",
-      passwordHash,
-      color: "#2251e0",
-    },
+    create: { email: COMPANY_EMAIL, passwordHash },
+  });
+
+  // Partner profiles - picked after login to attribute tasks/activity.
+  const ron = await prisma.user.upsert({
+    where: { id: "partner-ron" },
+    update: {},
+    create: { id: "partner-ron", name: "רון", color: "#2251e0" },
   });
 
   const guy = await prisma.user.upsert({
-    where: { email: "guy@keter-eng.co.il" },
+    where: { id: "partner-guy" },
     update: {},
-    create: {
-      name: "גיא",
-      email: "guy@keter-eng.co.il",
-      passwordHash,
-      color: "#eda520",
-    },
+    create: { id: "partner-guy", name: "גיא", color: "#eda520" },
   });
 
   const existingProjects = await prisma.project.count();
   if (existingProjects > 0) {
     console.log("כבר קיימים פרויקטים במסד הנתונים - מדלג על נתוני דוגמה.");
-    console.log("משתמשים מוכנים:");
-    console.log(`  ${ron.email} / ${DEFAULT_PASSWORD}`);
-    console.log(`  ${guy.email} / ${DEFAULT_PASSWORD}`);
+    console.log("פרטי התחברות:");
+    console.log(`  ${COMPANY_EMAIL} / ${DEFAULT_PASSWORD}`);
     return;
   }
 
@@ -197,9 +195,8 @@ async function main() {
   });
 
   console.log("נתוני דוגמה נוצרו בהצלחה!");
-  console.log("פרטי התחברות:");
-  console.log(`  ${ron.email} / ${DEFAULT_PASSWORD}`);
-  console.log(`  ${guy.email} / ${DEFAULT_PASSWORD}`);
+  console.log("פרטי התחברות (משותף לרון ולגיא):");
+  console.log(`  ${COMPANY_EMAIL} / ${DEFAULT_PASSWORD}`);
 }
 
 main()

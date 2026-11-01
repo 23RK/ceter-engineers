@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth";
+import { requirePartner } from "@/lib/auth";
 import type { TaskPriority, TaskStatus } from "@prisma/client";
 
 export type ActionState = {
@@ -25,7 +25,7 @@ export async function createTask(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const user = await requireUser();
+  const user = await requirePartner();
 
   const title = String(formData.get("title") ?? "").trim();
   if (!title) return { error: "יש להזין כותרת למשימה" };
@@ -68,7 +68,7 @@ export async function updateTask(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  await requireUser();
+  await requirePartner();
 
   const title = String(formData.get("title") ?? "").trim();
   if (!title) return { error: "יש להזין כותרת למשימה" };
@@ -97,7 +97,7 @@ export async function updateTask(
 }
 
 export async function deleteTask(taskId: string) {
-  await requireUser();
+  await requirePartner();
   await prisma.task.delete({ where: { id: taskId } });
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
@@ -105,7 +105,7 @@ export async function deleteTask(taskId: string) {
 }
 
 export async function setTaskStatus(taskId: string, status: TaskStatus) {
-  const user = await requireUser();
+  const user = await requirePartner();
   const task = await prisma.task.update({
     where: { id: taskId },
     data: { status },

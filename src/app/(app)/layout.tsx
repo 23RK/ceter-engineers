@@ -1,26 +1,23 @@
-import { requireUser } from "@/lib/auth";
+import Link from "next/link";
+import { Repeat, Settings } from "lucide-react";
+import { requirePartner } from "@/lib/auth";
 import { NavLinks } from "@/components/nav-links";
 import { LogoutButton } from "@/components/logout-button";
+import { Logo } from "@/components/logo";
 
 export default async function AppLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const user = await requireUser();
+  const user = await requirePartner();
 
   return (
     <div className="min-h-screen bg-background md:flex">
       {/* Sidebar - desktop */}
       <aside className="hidden w-64 shrink-0 flex-col bg-brand-950 px-4 py-6 md:flex">
-        <div className="mb-8 flex items-center gap-3 px-1.5">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">
-            כה
-          </div>
-          <div>
-            <p className="text-sm font-bold text-white">כתר הנדסה</p>
-            <p className="text-xs text-white/50">ניהול ופיקוח פרויקטים</p>
-          </div>
+        <div className="mb-8 px-1.5">
+          <Logo size="md" />
         </div>
 
         <NavLinks />
@@ -37,24 +34,47 @@ export default async function AppLayout({
               <p className="truncate text-sm font-medium text-white">
                 {user.name}
               </p>
-              <p className="truncate text-xs text-white/40" dir="ltr">
-                {user.email}
-              </p>
+              <p className="truncate text-xs text-white/40">שותף מחובר</p>
             </div>
           </div>
+          <Link
+            href="/choose-user"
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-white/70 transition hover:bg-white/10 hover:text-white"
+          >
+            <Repeat size={16} />
+            החלפת משתמש
+          </Link>
+          <Link
+            href="/settings"
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-white/70 transition hover:bg-white/10 hover:text-white"
+          >
+            <Settings size={16} />
+            הגדרות
+          </Link>
           <LogoutButton />
         </div>
       </aside>
 
       {/* Top bar - mobile */}
       <header className="sticky top-0 z-20 flex items-center justify-between gap-3 bg-brand-950 px-4 py-3 md:hidden">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-xs font-bold text-white">
-            כה
-          </div>
-          <p className="text-sm font-bold text-white">כתר הנדסה</p>
+        <Logo size="sm" />
+        <div className="flex items-center gap-1">
+          <Link
+            href="/choose-user"
+            className="rounded-lg p-2 text-white/70 transition hover:bg-white/10 hover:text-white"
+            title="החלפת משתמש"
+          >
+            <Repeat size={16} />
+          </Link>
+          <Link
+            href="/settings"
+            className="rounded-lg p-2 text-white/70 transition hover:bg-white/10 hover:text-white"
+            title="הגדרות"
+          >
+            <Settings size={16} />
+          </Link>
+          <LogoutButton />
         </div>
-        <LogoutButton />
       </header>
       <nav className="sticky top-[52px] z-20 flex gap-1 overflow-x-auto bg-brand-900 px-3 py-2 md:hidden">
         <NavLinks orientation="horizontal" />

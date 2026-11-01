@@ -2,23 +2,25 @@
 
 :root {
   --background: #f4f6f9;
-  --foreground: #14213d;
+  --foreground: #1a1530;
 
-  --color-brand-50: #eef4ff;
-  --color-brand-100: #dbe7fe;
-  --color-brand-200: #bed4fd;
-  --color-brand-300: #90b8fb;
-  --color-brand-400: #5b93f6;
-  --color-brand-500: #3570ee;
-  --color-brand-600: #2251e0;
-  --color-brand-700: #1c3fc3;
-  --color-brand-800: #1c369c;
-  --color-brand-900: #14213d;
-  --color-brand-950: #0d152a;
-
-  --color-accent-400: #f5b942;
-  --color-accent-500: #eda520;
-  --color-accent-600: #cc8811;
+  /* כתר הנדסה brand purple. 50/100/600/700/950 are the exact brand
+     values; the rest are interpolated to keep one smooth scale. 900/950
+     stay near-black (the "ink"/dark-surface role: headings, sidebar bg)
+     - only 50-800 read as purple (the "accent" role: buttons, icons,
+     links, active states, focus rings). See AGENTS.md-adjacent notes in
+     the design request this was built from. */
+  --color-brand-50: #f6f5fb;
+  --color-brand-100: #efedf8;
+  --color-brand-200: #ddd6f7;
+  --color-brand-300: #c2b6ef;
+  --color-brand-400: #a48ce6;
+  --color-brand-500: #9179f5;
+  --color-brand-600: #7c5cfc;
+  --color-brand-700: #5a3fd1;
+  --color-brand-800: #452f9e;
+  --color-brand-900: #1a1530;
+  --color-brand-950: #0b0b10;
 }
 
 @theme inline {
@@ -37,10 +39,6 @@
   --color-brand-800: var(--color-brand-800);
   --color-brand-900: var(--color-brand-900);
   --color-brand-950: var(--color-brand-950);
-
-  --color-accent-400: var(--color-accent-400);
-  --color-accent-500: var(--color-accent-500);
-  --color-accent-600: var(--color-accent-600);
 }
 
 body {
