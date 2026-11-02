@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useOptimistic, useState, useTransition } from "react";
 import {
+  AlertTriangle,
   ChevronDown,
   CircleDollarSign,
   Download,
@@ -33,6 +34,7 @@ import {
   inspectionStatusMeta,
   monthKey,
   monthLabel,
+  needsAttention,
   paymentMethodLabel,
   paymentStatusMeta,
   summarize,
@@ -121,6 +123,13 @@ export function InspectionsBoard({
     });
   };
 
+  const attention = needsAttention(rows, today);
+  const attentionCount =
+    attention.reportLate.length +
+    attention.unpaid0to7.length +
+    attention.unpaid8to30.length +
+    attention.unpaid30plus.length +
+    attention.tomorrowNotScheduled.length;
   const visible = filterInspections(rows, filters, { today, myInspectorId });
   const groups = groupByMonth(visible);
   const filtering = Object.values(filters).some(Boolean);
@@ -314,6 +323,23 @@ export function InspectionsBoard({
       )}
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+
+      {attentionCount > 0 && (
+        <a
+          href="/inspections/summary#attention"
+          className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 transition hover:bg-amber-100"
+        >
+          <span className="flex items-center gap-1.5 font-bold">
+            <AlertTriangle size={16} className="text-amber-600" />
+            דורש טיפול ({attentionCount})
+          </span>
+          {attention.reportLate.length > 0 && <span>{attention.reportLate.length} בלי דוח יותר מ-48 שעות</span>}
+          {attention.tomorrowNotScheduled.length > 0 && <span>{attention.tomorrowNotScheduled.length} מחר ולא תואמו</span>}
+          {attention.unpaid8to30.length + attention.unpaid30plus.length > 0 && (
+            <span>{attention.unpaid8to30.length + attention.unpaid30plus.length} דוח נשלח ולא שולם מעל שבוע</span>
+          )}
+        </a>
+      )}
 
       {groups.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-black/10 bg-white/60 py-16 text-center text-sm text-black/40">
