@@ -15,12 +15,16 @@ export function TasksClient({
   tasks,
   users,
   projects,
+  currentUserId,
 }: {
   tasks: TaskWithRelations[];
   users: UserOption[];
   projects: ProjectOption[];
+  currentUserId: string;
 }) {
-  const [assigneeFilter, setAssigneeFilter] = useState("");
+  // "המשימות שלי": starts on the signed-in partner's tasks; "כל האחראים"
+  // shows the whole shared board.
+  const [assigneeFilter, setAssigneeFilter] = useState(currentUserId);
   const [projectFilter, setProjectFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<TaskPriority | "">("");
   const [, startTransition] = useTransition();
@@ -54,9 +58,13 @@ export function TasksClient({
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-brand-900">משימות</h1>
+          <h1 className="text-xl font-bold text-brand-900">
+            {assigneeFilter === currentUserId ? "המשימות שלי" : "משימות"}
+          </h1>
           <p className="text-sm text-black/50">
-            לוח המשימות המשותף של השותפים
+            {assigneeFilter === currentUserId
+              ? "המשימות שמשויכות אליך. אפשר לבחור \"כל האחראים\" לכל הלוח."
+              : "לוח המשימות המשותף של השותפים"}
           </p>
         </div>
 
@@ -84,7 +92,7 @@ export function TasksClient({
           <option value="">כל האחראים</option>
           {users.map((u) => (
             <option key={u.id} value={u.id}>
-              {u.name}
+              {u.id === currentUserId ? `${u.name} (אני)` : u.name}
             </option>
           ))}
         </select>
@@ -117,16 +125,16 @@ export function TasksClient({
           ))}
         </select>
 
-        {(assigneeFilter || projectFilter || priorityFilter) && (
+        {(assigneeFilter !== currentUserId || projectFilter || priorityFilter) && (
           <button
             onClick={() => {
-              setAssigneeFilter("");
+              setAssigneeFilter(currentUserId);
               setProjectFilter("");
               setPriorityFilter("");
             }}
             className="rounded-lg px-3 py-2 text-sm text-brand-600 hover:underline"
           >
-            נקה סינון
+            איפוס סינון
           </button>
         )}
       </div>

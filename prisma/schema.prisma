@@ -15,6 +15,14 @@ enum ProjectStatus {
   CANCELED
 }
 
+// Which department runs a project (SPEC §3.1). בדק בית is a separate table
+// (stage 3), not a Project department. Nullable only for existing projects
+// still waiting to be assigned on the "שיוך מחלקות" screen (/projects).
+enum Department {
+  DEVELOPER // ניהול ופיקוח – יזמים
+  VILLA // ניהול ופיקוח – וילות
+}
+
 enum TaskStatus {
   TODO
   IN_PROGRESS
@@ -64,8 +72,8 @@ model User {
   failedLoginCount  Int       @default(0)
   lockedUntil       DateTime?
 
-  assignedTasks Task[]        @relation("AssignedTasks")
-  createdTasks  Task[]        @relation("CreatedTasks")
+  assignedTasks Task[]              @relation("AssignedTasks")
+  createdTasks  Task[]              @relation("CreatedTasks")
   activities    Activity[]
   meetings      Meeting[]
   googleAccount GoogleAccount?
@@ -78,6 +86,7 @@ model Project {
   client      String?
   address     String?
   status      ProjectStatus @default(PLANNING)
+  department  Department?
   description String?
   budget      Float?
   startDate   DateTime?
@@ -88,6 +97,8 @@ model Project {
   tasks      Task[]
   milestones Milestone[]
   activities Activity[]
+
+  @@index([department])
 }
 
 model Milestone {

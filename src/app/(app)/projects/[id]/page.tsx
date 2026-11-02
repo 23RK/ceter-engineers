@@ -1,6 +1,9 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ChevronRight } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { departmentHref, departmentMeta } from "@/lib/departments";
 import { ProjectHeader } from "@/components/projects/project-header";
 import { ProjectMilestones } from "@/components/projects/project-milestones";
 import { ProjectTasks } from "@/components/projects/project-tasks";
@@ -36,6 +39,15 @@ export default async function ProjectDetailPage({
 
   return (
     <div className="flex flex-col gap-5">
+      <Link
+        href={departmentHref(project.department)}
+        className="-mb-2 flex w-fit items-center gap-1 rounded-lg py-1 text-sm font-medium text-black/50 transition hover:text-brand-600"
+      >
+        <ChevronRight size={16} />
+        {project.department
+          ? departmentMeta(project.department).label
+          : "שיוך מחלקות"}
+      </Link>
       <ProjectHeader project={project} />
       <ProjectMilestones projectId={project.id} milestones={project.milestones} />
       <ProjectTasks

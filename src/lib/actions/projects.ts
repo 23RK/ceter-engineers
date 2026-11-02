@@ -4,8 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import type { ProjectStatus } from "@prisma/client";
+import type { Department, ProjectStatus } from "@prisma/client";
 import type { ActionState } from "@/lib/actions/tasks";
+import { departmentHref, departmentMeta, isDepartment } from "@/lib/departments";
 
 export type { ActionState };
 
@@ -17,6 +18,13 @@ function toOptionalDate(value: FormDataEntryValue | null) {
 function toOptionalString(value: FormDataEntryValue | null) {
   const str = String(value ?? "").trim();
   return str || null;
+}
+
+/** Every page that lists projects by department. */
+function revalidateProjectLists() {
+  revalidatePath("/projects");
+  revalidatePath("/departments/[slug]", "page");
+  revalidatePath("/dashboard");
 }
 
 function toOptionalFloat(value: FormDataEntryValue | null) {
@@ -35,9 +43,13 @@ export async function createProject(
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "יש להזין שם פרויקט" };
 
+  const department = formData.get("department");
+  if (!isDepartment(department)) return { error: "יש לבחור מחלקה" };
+
   const project = await prisma.project.create({
     data: {
       name,
+      department,
       client: toOptionalString(formData.get("client")),
       address: toOptionalString(formData.get("address")),
       status: (formData.get("status") as ProjectStatus) || "PLANNING",
@@ -56,8 +68,7 @@ export async function createProject(
     },
   });
 
-  revalidatePath("/projects");
-  revalidatePath("/dashboard");
+  revalidateProjectLists();
   return { ok: true, ts: Date.now() };
 }
 
@@ -77,10 +88,21 @@ export async function updateProject(
 
   const status = (formData.get("status") as ProjectStatus) || "PLANNING";
 
+  // Required once set; an existing unassigned project may stay unassigned.
+  const departmentValue = formData.get("department");
+  if (departmentValue && !isDepartment(departmentValue)) {
+    return { error: "מחלקה לא חוקית" };
+  }
+  if (!departmentValue && prevProject?.department) {
+    return { error: "יש לבחור מחלקה" };
+  }
+  const department = isDepartment(departmentValue) ? departmentValue : null;
+
   await prisma.project.update({
     where: { id: projectId },
     data: {
       name,
+      department,
       client: toOptionalString(formData.get("client")),
       address: toOptionalString(formData.get("address")),
       status,
@@ -101,18 +123,64 @@ export async function updateProject(
     });
   }
 
-  revalidatePath("/projects");
+  revalidateProjectLists();
   revalidatePath(`/projects/${projectId}`);
-  revalidatePath("/dashboard");
+  return { ok: true, ts: Date.now() };
+}
+
+/** Quick assignment from the "שיוך מחלקות" screen. */
+export async function setProjectDepartment(
+  projectId: string,
+  department: Department
+): Promise<ActionState> {
+  const user = await requireUser();
+  if (!isDepartment(department)) return { error: "מחלקה לא חוקית" };
+
+  const project = await prisma.project.update({
+    where: { id: projectId },
+    data: { department },
+    select: { name: true },
+  });
+  await prisma.activity.create({
+    data: {
+      message: `${user.name} שייך/ה את הפרויקט "${project.name}" למחלקת ${departmentMeta(department).short}`,
+      actorId: user.id,
+      projectId,
+    },
+  });
+
+  revalidateProjectLists();
+  revalidatePath(`/projects/${projectId}`);
+  return { ok: true, ts: Date.now() };
+}
+
+/** Rename from the "שיוך מחלקות" screen (SPEC §3.1: "פיקוח יזם" is not a name). */
+export async function renameProject(
+  projectId: string,
+  name: string
+): Promise<ActionState> {
+  await requireUser();
+  const trimmed = name.trim();
+  if (!trimmed) return { error: "יש להזין שם פרויקט" };
+
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { name: trimmed },
+  });
+
+  revalidateProjectLists();
+  revalidatePath(`/projects/${projectId}`);
   return { ok: true, ts: Date.now() };
 }
 
 export async function deleteProject(projectId: string) {
   await requireUser();
-  await prisma.project.delete({ where: { id: projectId } });
-  revalidatePath("/projects");
-  revalidatePath("/dashboard");
-  redirect("/projects");
+  const project = await prisma.project.delete({
+    where: { id: projectId },
+    select: { department: true },
+  });
+  revalidateProjectLists();
+  redirect(departmentHref(project.department));
 }
 
 export async function createMilestone(

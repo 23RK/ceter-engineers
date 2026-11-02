@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { ProjectForm } from "@/components/projects/project-form";
 import { deleteProject } from "@/lib/actions/projects";
 import { projectStatusMeta } from "@/lib/constants";
+import { departmentMeta } from "@/lib/departments";
 import { formatDate } from "@/lib/format";
 import type { Project } from "@prisma/client";
 
@@ -25,6 +26,13 @@ export function ProjectHeader({ project }: { project: Project }) {
                 {project.name}
               </h1>
               <Badge className={status.badge}>{status.label}</Badge>
+              {project.department ? (
+                <Badge className={departmentMeta(project.department).badge}>
+                  {departmentMeta(project.department).short}
+                </Badge>
+              ) : (
+                <Badge className="bg-amber-100 text-amber-800">ללא מחלקה</Badge>
+              )}
             </div>
             {project.client && (
               <p className="mt-1 text-sm text-black/50">
