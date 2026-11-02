@@ -46,16 +46,6 @@ enum GoogleSyncStatus {
   ERROR
 }
 
-// LEGACY - the old shared company login, cancelled. Nothing reads or writes
-// it any more (each partner now has their own password on User); the table
-// is dropped in a later migration.
-model Credential {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  createdAt    DateTime @default(now())
-}
-
 // A person who can sign in, with their own email + password. Only rows
 // with both an email and a password can sign in.
 model User {
