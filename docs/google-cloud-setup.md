@@ -1,97 +1,97 @@
-# הגדרת Google Cloud Console: כניסה עם Google ויומן
+# הגדרות להפעלה: כניסה, Google Cloud ו-Vercel
 
-מדריך חד-פעמי. לוקח כ-15 דקות. כל הצעדים חינמיים.
+הכניסה למערכת היא באימייל ובסיסמה אישית. **Google משמש רק לחיבור היומן**, ורק לשני החשבונות:
+- `ronketerltd@gmail.com`: רון
+- `guyketerltd@gmail.com`: גיא
 
-> **שמות בקונסול:** גוגל העבירה את הגדרות ה-OAuth לאזור בשם **Google Auth Platform**, עם הלשוניות Branding, Audience, Clients ו-Data Access. בפרויקטים ישנים זה עדיין מופיע כ-**APIs & Services → OAuth consent screen / Credentials**. התוכן זהה, רק המיקום שונה.
+כל חשבון גוגל אחר נדחה, גם אם השותף בחר בו במסך של גוגל.
+
+`keterengineers@gmail.com` הוא הבעלים של פרויקט Google Cloud, אבל לא נכנס למערכת.
 
 ---
 
-## צעד 1: לבחור את הפרויקט
+## חלק א: Google Cloud Console
 
-1. היכנסו ל-https://console.cloud.google.com עם **`keterengineers@gmail.com`**. מומלץ שהפרויקט יהיה בבעלות חשבון החברה, ולא חשבון אישי. החשבון הזה מנהל את הפרויקט בקונסול בלבד, ולא נכנס למערכת עצמה.
-2. בתפריט העליון (ליד הלוגו של Google Cloud) בחרו את הפרויקט הקיים של כתר הנדסה, אם נוצר כזה בעבר. אחרת: **New Project**, שם "כתר הנדסה", ואז **Create**.
+> כבר בוצע: פרויקט, מסך הרשאה במצב **In production** עם שלושת ה-scopes (`openid`, `email`, `.../auth/calendar.events`), ו-OAuth Client מסוג Web application.
 
-## צעד 2: להפעיל את Google Calendar API
+נותר רק להוסיף ל-Client את ה-Redirect URI:
 
-1. בשורת החיפוש העליונה כתבו **Google Calendar API** ופתחו אותו.
-2. לחצו **Enable**. אם כתוב **Manage**, ה-API כבר פעיל וממשיכים הלאה.
+1. https://console.cloud.google.com, מחוברים עם `keterengineers@gmail.com`, ובוחרים את הפרויקט.
+2. **Google Auth Platform → Clients**, או **APIs & Services → Credentials**. פותחים את ה-OAuth Client.
+3. תחת **Authorized redirect URIs** לוחצים **Add URI** ומדביקים בדיוק:
 
-## צעד 3: מסך ההסכמה (Branding + Audience)
+   ```
+   https://ceter-engineers.vercel.app/api/google/callback
+   ```
 
-1. בחיפוש העליון כתבו **Google Auth Platform**, או נווטו ל-**APIs & Services → OAuth consent screen**.
-2. אם מופיע **Get started**, מלאו:
-   - **App name:** `כתר הנדסה`
-   - **User support email:** `keterengineers@gmail.com`
-   - **Audience:** **External**
-   - **Contact information:** `keterengineers@gmail.com`
-   - סמנו את ההסכמה למדיניות ולחצו **Create**.
-3. בלשונית **Branding**:
-   - **אל תעלו לוגו.** העלאת לוגו מחייבת תהליך אימות מול גוגל, ובלעדיו האפליקציה לא תעבוד עד שהאימות יאושר.
-   - את **Authorized domains** ואת קישורי ה-homepage וה-privacy policy השאירו ריקים.
+   - בלי `/` בסוף, עם `https`.
+   - אם מופיעה שם כתובת אחרת מגרסה קודמת (למשל `.../api/auth/google/callback`), אפשר למחוק אותה.
+   - **Authorized JavaScript origins**: לא נדרש.
+4. **Save**. לפעמים לוקח כמה דקות עד שהשינוי נכנס לתוקף.
 
-## צעד 4: ההרשאות (Data Access)
+> אם תעברו לדומיין אחר, צריך להוסיף כאן גם `https://<הדומיין>/api/google/callback`, ולעדכן את `APP_URL` בהתאם.
 
-1. לשונית **Data Access**, ואז **Add or remove scopes**.
-2. סמנו את שלוש ההרשאות הבאות. אם אחת מהן לא מופיעה ברשימה, הדביקו אותה בתיבה **Manually add scopes** בתחתית החלון:
-   - `openid`
-   - `https://www.googleapis.com/auth/userinfo.email`
-   - `https://www.googleapis.com/auth/calendar.events`
-3. **Update**, ואחר כך **Save**.
+---
 
-> אם בעבר הוגדרה ההרשאה הרחבה `https://www.googleapis.com/auth/calendar`, אפשר להסיר אותה. המערכת כבר לא צריכה אותה.
+## חלק ב: משתני סביבה ב-Vercel
 
-## צעד 5: מעבר ל-"In production" (חשוב!)
+ב-Vercel: **Project → Settings → Environment Variables**. מסמנים **Production** לכל המשתנים.
 
-1. לשונית **Audience**.
-2. תחת **Publishing status** לחצו **Publish app**, ואז **Confirm**.
-3. הסטטוס צריך להתחלף ל-**In production**.
+| משתנה | ערך | הסבר |
+|---|---|---|
+| `DATABASE_URL` | (כבר קיים) | ה-connection string של Neon. לא לשנות. |
+| `SESSION_SECRET` | (כבר קיים) | המפתח שחותם את עוגיית הכניסה. לא לשנות. שינוי שלו מנתק את כולם. |
+| `GOOGLE_CLIENT_ID` | ה-Client ID מהקונסול | נראה כמו `1234...-abcd.apps.googleusercontent.com`. |
+| `GOOGLE_CLIENT_SECRET` | ה-Client secret מהקונסול | מתחיל ב-`GOCSPX-`. סודי. |
+| `APP_URL` | `https://ceter-engineers.vercel.app` | הכתובת המלאה של האתר, בלי `/` בסוף. ממנה נבנה ה-Redirect URI, ולכן היא חייבת להתאים בדיוק לחלק א. |
+| `TOKEN_ENCRYPTION_KEY` | 64 תווים הקסדצימליים אקראיים | מצפין את ה-tokens של גוגל במסד הנתונים. **אם כבר קיים, להשאיר כמו שהוא.** אם לא: מייצרים עם `openssl rand -hex 32` בטרמינל, או בקונסולת הדפדפן (F12 → Console) עם הפקודה שלמטה. סודי, ולא נשמר בשום מקום אחר. |
+| `INITIAL_PASSWORD_RON` | סיסמה ראשונית לרון | **זמני.** לפחות 8 תווים. ר' חלק ג. |
+| `INITIAL_PASSWORD_GUY` | סיסמה ראשונית לגיא | **זמני.** לפחות 8 תווים. ר' חלק ג. |
 
-> **למה זה חשוב:** במצב **Testing**, גוגל מבטלת את הרשאת היומן אחרי 7 ימים, והסנכרון נשבר בלי שום הודעה.
->
-> **האם נדרש אימות מגוגל?** לא. אפליקציה עם פחות מ-100 משתמשים יכולה לעבוד במצב In production בלי אימות. ייתכן שתופיע הודעה שהאפליקציה "needs verification". אפשר להתעלם ממנה: כל משתמש יראה פעם אחת אזהרת "אפליקציה לא מאומתת" ויאשר (ר' צעד 8).
->
-> **רשימת Test users** כבר לא רלוונטית במצב In production, ואפשר להשאיר אותה כמו שהיא. ההגבלה על מי שנכנס למערכת נעשית בתוך המערכת עצמה (רשימת המורשים).
+ייצור `TOKEN_ENCRYPTION_KEY` בקונסולת הדפדפן:
 
-## צעד 6: פרטי ה-OAuth client (Clients)
+```js
+[...crypto.getRandomValues(new Uint8Array(32))].map(b => b.toString(16).padStart(2, "0")).join("")
+```
 
-1. לשונית **Clients**, או **APIs & Services → Credentials**.
-2. **אם כבר קיים client מהגרסה הקודמת** (סוג Web application): פתחו אותו לעריכה.
-   - תחת **Authorized redirect URIs** הוסיפו את:
-     `https://ceter-engineers.vercel.app/api/auth/google/callback`
-   - את הכתובת הישנה `.../api/google/callback` אפשר למחוק.
-   - **Save**. ה-Client ID וה-Secret נשארים כמו שהיו, ואין צורך לשנות אותם ב-Vercel.
-3. **אם אין client:** לחצו **Create client** (או **Create Credentials → OAuth client ID**):
-   - **Application type:** Web application
-   - **Name:** `כתר הנדסה – Vercel`
-   - **Authorized JavaScript origins:** אפשר להשאיר ריק.
-   - **Authorized redirect URIs:** `https://ceter-engineers.vercel.app/api/auth/google/callback`
-   - **Create**.
-   - **העתיקו מיד את ה-Client ID וה-Client secret**, או לחצו **Download JSON**. בקונסול החדש ה-secret מוצג רק פעם אחת.
+אחרי שמירת המשתנים: **Deployments → ⋮ ליד הפריסה האחרונה → Redeploy**. בלי זה השינויים לא נכנסים לתוקף.
 
-> הכתובת חייבת להיות זהה בדיוק ל-`APP_URL` + `/api/auth/google/callback`: אותו https, בלי `/` בסוף ובלי www. אם תעברו בעתיד לדומיין אחר, צריך להוסיף גם אותו כאן.
+> **בלי משתני ה-Google**, הכניסה למערכת עדיין עובדת. רק כפתור "חיבור יומן Google" לא יופיע.
 
-## צעד 7: משתני סביבה ב-Vercel
+---
 
-ב-Vercel: **Project → Settings → Environment Variables**. ודאו שקיימים ארבעת המשתנים (בסביבת Production):
+## חלק ג: הגדרת סיסמה ראשונית לכל שותף
 
-| Name | Value |
-|---|---|
-| `GOOGLE_CLIENT_ID` | מצעד 6 |
-| `GOOGLE_CLIENT_SECRET` | מצעד 6 |
-| `APP_URL` | `https://ceter-engineers.vercel.app` (בלי `/` בסוף) |
-| `TOKEN_ENCRYPTION_KEY` | **אם המשתנה כבר קיים, השאירו אותו כמו שהוא.** אם לא: 64 תווים הקסדצימליים אקראיים. מייצרים בטרמינל עם `openssl rand -hex 32`, או מבקשים מקלוד לייצר ערך ולהעביר אותו בפרטיות. לא לשמור בריפו. |
+הסיסמה לא נכתבת בקוד ולא נשמרת כטקסט במסד הנתונים. בזמן הפריסה, המערכת מצפינה את הערך ממשתנה הסביבה ושומרת רק את ההצפנה (bcrypt). **הסיסמה נקבעת רק למשתמש שעוד אין לו סיסמה**, כך שהמשתנה לעולם לא דורס סיסמה ששונתה בהגדרות.
 
-אחר כך: **Deployments → ⋮ ליד הפריסה האחרונה → Redeploy**, כדי שהשינויים ייכנסו לתוקף.
+1. ב-Vercel מוסיפים את `INITIAL_PASSWORD_RON` ואת `INITIAL_PASSWORD_GUY`, כל אחד לפחות 8 תווים.
+2. **Redeploy**. בלוג של ה-build יופיע: "הוגדרה סיסמה ראשונית עבור ...".
+3. כל אחד מעביר לשותף את הסיסמה הראשונית שלו בערוץ פרטי.
+4. כל שותף נכנס, עובר ל**הגדרות → שינוי סיסמה**, ובוחר סיסמה משלו.
+5. **מוחקים מ-Vercel את שני משתני ה-`INITIAL_PASSWORD_*`.** אין צורך ב-Redeploy נוסף.
 
-## צעד 8: כניסה ראשונה (כל שותף)
+### שכחתי סיסמה (איפוס)
 
-1. גלשו ל-https://ceter-engineers.vercel.app ולחצו **כניסה עם Google**.
-2. בחרו את החשבון: `ronketerltd@gmail.com` או `guyketerltd@gmail.com`.
-3. תופיע אזהרה: **"Google hasn't verified this app"**. לחצו **Advanced** ואז **Go to כתר הנדסה (unsafe)**. זה קורה פעם אחת.
-4. מיד אחרי זה (בפעם הראשונה בלבד) יופיע מסך הרשאות ליומן. **ודאו שהתיבה של Google Calendar מסומנת**, ולחצו **Continue**.
-5. הגעתם ללוח הבקרה. ב"הגדרות" אמור להופיע: "ההרשאה ליומן הראשי של ... פעילה".
+1. ב-Neon: **SQL Editor**, ומריצים (עם המייל של מי ששכח):
+   ```sql
+   UPDATE "User" SET "passwordHash" = NULL WHERE "email" = 'ronketerltd@gmail.com';
+   ```
+2. ב-Vercel מגדירים מחדש את `INITIAL_PASSWORD_RON` (או `_GUY`), ואז **Redeploy**.
+3. נכנסים, משנים סיסמה בהגדרות, ומוחקים שוב את המשתנה.
 
-רק `ronketerltd@gmail.com` ו-`guyketerltd@gmail.com` יכולים להיכנס. ניסיון כניסה עם `keterengineers@gmail.com` ייחסם, וזה תקין.
+> **נעילה:** אחרי 10 ניסיונות כניסה שגויים, החשבון ננעל ל-15 דקות.
+
+---
+
+## חלק ד: חיבור היומן (כל שותף, פעם אחת)
+
+1. נכנסים למערכת עם האימייל והסיסמה, ועוברים ל**הגדרות → יומן Google → חיבור יומן Google**.
+2. במסך של גוגל, החשבון הנכון כבר מסומן. **לבחור רק בו.**
+3. ייתכן שתופיע אזהרה "Google hasn't verified this app". לוחצים **Advanced** ואז **Go to ... (unsafe)**. זה תקין לאפליקציה פרטית של שני משתמשים.
+4. במסך ההרשאות **מסמנים את תיבת היומן** ולוחצים **Continue**.
+5. חוזרים להגדרות עם ההודעה "יומן ה-Google חובר בהצלחה", ומתחתיה "מחובר ליומן הראשי של ...".
+
+**אם נבחר חשבון אחר:** החיבור נדחה, שום token לא נשמר, ההרשאה שגוגל הנפיקה מבוטלת מיד, ומוצגת הודעה שמציינת איזה חשבון נבחר ואיזה מותר.
 
 ---
 
@@ -99,8 +99,9 @@
 
 | מה רואים | הסיבה | פתרון |
 |---|---|---|
-| `Error 400: redirect_uri_mismatch` | ה-Redirect URI בקונסול לא תואם ל-`APP_URL` | צעד 6. ההודעה של גוגל מציגה את הכתובת המדויקת שנשלחה, והיא צריכה להופיע ברשימה בדיוק כך. |
-| "לחשבון הזה אין הרשאת כניסה למערכת" | המייל לא נמצא ברשימת המורשים | לבדוק שנבחר החשבון הנכון. רשימת המורשים: ר' README. |
-| "ההתחברות עם Google עוד לא הוגדרה בשרת" | חסר אחד מארבעת משתני הסביבה | צעד 7, ואחריו Redeploy. |
-| ב"הגדרות": "ההרשאה ליומן לא סומנה" | בצעד 8.4 תיבת היומן לא סומנה | ב"הגדרות" לחצו "חיבור יומן Google" ואשרו שוב. |
-| `Error 403: access_denied` ("has not completed the Google verification process") | האפליקציה עדיין במצב Testing | צעד 5. |
+| `Error 400: redirect_uri_mismatch` | ה-Redirect URI בקונסול לא תואם ל-`APP_URL` | חלק א. ההודעה של גוגל מציגה את הכתובת שנשלחה, והיא צריכה להופיע ברשימה בדיוק כך. |
+| "החיבור נדחה: נבחר חשבון Google אחר" | במסך של גוגל נבחר חשבון שאינו של השותף | לנסות שוב ולבחור בחשבון הנכון. אם הדפדפן מחובר לכמה חשבונות גוגל, לבחור ידנית. |
+| "ההרשאה ליומן לא סומנה" | תיבת היומן לא סומנה במסך ההרשאות | לנסות שוב ולסמן אותה. |
+| אין כפתור "חיבור יומן Google" בהגדרות | חסר אחד ממשתני ה-Google | חלק ב, ואחריו Redeploy. |
+| "אימייל או סיסמה שגויים" למרות שהסיסמה נכונה | עוד לא הוגדרה סיסמה ראשונית | חלק ג. |
+| `Error 403: access_denied` | מסך ההרשאה במצב Testing | **Google Auth Platform → Audience → Publish app**. |

@@ -1,6 +1,39 @@
 import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
+
+/**
+ * Initial passwords come from environment variables, never from code:
+ * INITIAL_PASSWORD_RON / INITIAL_PASSWORD_GUY. A password is set ONLY for a
+ * user who has none yet, so this never overwrites a password changed in
+ * Settings. To reset a forgotten password: clear that user's passwordHash
+ * in the database, set the variable, and redeploy (see README).
+ */
+async function setInitialPasswords() {
+  const initial = [
+    { email: "ronketerltd@gmail.com", envVar: "INITIAL_PASSWORD_RON" },
+    { email: "guyketerltd@gmail.com", envVar: "INITIAL_PASSWORD_GUY" },
+  ];
+  for (const { email, envVar } of initial) {
+    const password = process.env[envVar];
+    if (!password) continue;
+    if (password.length < 8) {
+      console.warn(`${envVar} קצרה מ-8 תווים - לא הוגדרה.`);
+      continue;
+    }
+    const { count } = await prisma.user.updateMany({
+      where: { email, passwordHash: null },
+      data: {
+        passwordHash: await bcrypt.hash(password, 12),
+        passwordChangedAt: new Date(),
+        failedLoginCount: 0,
+        lockedUntil: null,
+      },
+    });
+    if (count > 0) console.log(`הוגדרה סיסמה ראשונית עבור ${email}`);
+  }
+}
 
 async function main() {
   // The sign-in allow-list: each person signs in with "Sign in with Google"
@@ -30,6 +63,8 @@ async function main() {
       color: "#eda520",
     },
   });
+
+  await setInitialPasswords();
 
   const existingProjects = await prisma.project.count();
   if (existingProjects > 0) {

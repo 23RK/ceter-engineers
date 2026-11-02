@@ -1,32 +1,55 @@
-import { CalendarDays, CircleAlert, CircleCheck } from "lucide-react";
-import { prisma } from "@/lib/prisma";
+import { CalendarDays, CircleAlert, CircleCheck, KeyRound } from "lucide-react";
 import { ROLE_LABELS, requireUser } from "@/lib/auth";
+import { getCalendarConnection, isGoogleConfigured } from "@/lib/google/oauth";
+import { SYNCABLE_GOOGLE_ACCOUNTS } from "@/lib/google/calendar-access";
+import { disconnectCalendarAction } from "@/lib/actions/auth";
+import { ChangePasswordForm } from "@/components/change-password-form";
 
-const CALENDAR_ERRORS: Record<string, string> = {
-  denied: "לא ניתנה הרשאה ליומן Google.",
-  scope: "ההרשאה ליומן לא סומנה במסך האישור של Google. יש לסמן אותה ולנסות שוב.",
-  wrong_account:
-    "נבחר חשבון Google אחר מזה שאיתו נכנסת למערכת. יש לבחור באותו חשבון.",
-  failed: "החיבור ליומן Google נכשל. נסו שוב.",
-};
+function calendarErrorMessage(error: string, ownEmail: string, googleEmail?: string) {
+  switch (error) {
+    case "wrong_account":
+      return (
+        <>
+          החיבור נדחה: נבחר חשבון Google אחר
+          {googleEmail && (
+            <>
+              {" "}(<bdi>{googleEmail}</bdi>)
+            </>
+          )}
+          . אפשר לחבר רק את החשבון <bdi>{ownEmail}</bdi>. שום הרשאה לא נשמרה.
+        </>
+      );
+    case "not_syncable":
+      return "למשתמש הזה אין אפשרות לחבר יומן Google.";
+    case "unverified":
+      return "החיבור נדחה: Google לא אישר את כתובת המייל של החשבון.";
+    case "scope":
+      return "ההרשאה ליומן לא סומנה במסך האישור של Google. יש לסמן אותה ולנסות שוב.";
+    case "denied":
+      return "לא ניתנה הרשאה ליומן Google.";
+    case "not_configured":
+      return "חיבור ל-Google עוד לא הוגדר בשרת (חסרים משתני סביבה, ראו docs/google-cloud-setup.md).";
+    case "state":
+      return "פג תוקף ניסיון החיבור. נסו שוב.";
+    default:
+      return "החיבור ליומן Google נכשל. נסו שוב.";
+  }
+}
 
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ calendar_error?: string; calendar_connected?: string }>;
+  searchParams: Promise<{
+    calendar_error?: string;
+    calendar_connected?: string;
+    google_email?: string;
+  }>;
 }) {
   const user = await requireUser();
-  const { calendar_error, calendar_connected } = await searchParams;
+  const { calendar_error, calendar_connected, google_email } = await searchParams;
 
-  const googleAccount =
-    user.role === "PARTNER"
-      ? await prisma.googleAccount.findUnique({
-          where: { userId: user.id },
-          select: { googleEmail: true },
-        })
-      : null;
-  const calendarConnected =
-    googleAccount?.googleEmail.toLowerCase() === user.email;
+  const canSyncCalendar = SYNCABLE_GOOGLE_ACCOUNTS.includes(user.email);
+  const connection = canSyncCalendar ? await getCalendarConnection(user.id) : null;
 
   return (
     <div className="flex flex-col gap-5">
@@ -35,7 +58,7 @@ export default async function SettingsPage({
         <p className="text-sm text-black/50">החשבון שלך במערכת</p>
       </div>
 
-      <section className="max-w-md rounded-2xl border border-black/5 bg-white p-5 shadow-sm">
+      <section className="max-w-lg rounded-2xl border border-black/5 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-3">
           <span
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
@@ -53,13 +76,18 @@ export default async function SettingsPage({
             {ROLE_LABELS[user.role]}
           </span>
         </div>
-        <p className="mt-4 text-xs text-black/40">
-          הכניסה למערכת נעשית עם חשבון Google הזה. אין סיסמה נפרדת.
-        </p>
       </section>
 
-      {user.role === "PARTNER" && (
-        <section className="max-w-md rounded-2xl border border-black/5 bg-white p-5 shadow-sm">
+      <section className="max-w-lg rounded-2xl border border-black/5 bg-white p-5 shadow-sm">
+        <h2 className="mb-4 flex items-center gap-2 text-sm font-bold text-brand-900">
+          <KeyRound size={16} />
+          שינוי סיסמה
+        </h2>
+        <ChangePasswordForm email={user.email} />
+      </section>
+
+      {canSyncCalendar && (
+        <section className="max-w-lg rounded-2xl border border-black/5 bg-white p-5 shadow-sm">
           <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-brand-900">
             <CalendarDays size={16} />
             יומן Google
@@ -74,30 +102,48 @@ export default async function SettingsPage({
           {calendar_error && (
             <p className="mb-3 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
               <CircleAlert size={15} className="mt-0.5 shrink-0" />
-              {CALENDAR_ERRORS[calendar_error] ?? CALENDAR_ERRORS.failed}
+              <span>{calendarErrorMessage(calendar_error, user.email, google_email)}</span>
             </p>
           )}
 
-          {calendarConnected ? (
-            <p className="text-sm text-black/60">
-              ההרשאה ליומן הראשי של{" "}
-              <span dir="ltr" className="font-medium">
-                {user.email}
-              </span>{" "}
-              פעילה.
-            </p>
-          ) : (
-            <p className="text-sm text-black/60">
-              היומן עוד לא מחובר. בלי החיבור, הפגישות שלך לא יסתנכרנו עם Google.
-            </p>
-          )}
+          <p className="text-sm text-black/60">
+            {connection ? (
+              <>
+                מחובר ליומן הראשי של{" "}
+                <bdi className="font-medium">{connection.googleEmail}</bdi>.
+              </>
+            ) : (
+              <>
+                היומן עוד לא מחובר. אפשר לחבר רק את חשבון ה-Google{" "}
+                <bdi className="font-medium">{user.email}</bdi>.
+              </>
+            )}
+          </p>
 
-          <a
-            href="/api/auth/google?mode=calendar&next=/settings"
-            className="mt-4 inline-flex items-center gap-2 rounded-lg border border-black/10 px-3 py-2 text-sm font-semibold text-brand-900 transition hover:bg-black/5"
-          >
-            {calendarConnected ? "חיבור מחדש" : "חיבור יומן Google"}
-          </a>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {isGoogleConfigured() ? (
+              <a
+                href="/api/google/connect"
+                className="inline-flex items-center gap-2 rounded-lg border border-black/10 px-3 py-2 text-sm font-semibold text-brand-900 transition hover:bg-black/5"
+              >
+                {connection ? "חיבור מחדש" : "חיבור יומן Google"}
+              </a>
+            ) : (
+              <p className="text-xs text-black/40">
+                חיבור ל-Google עוד לא הוגדר בשרת (ראו docs/google-cloud-setup.md).
+              </p>
+            )}
+            {connection && (
+              <form action={disconnectCalendarAction}>
+                <button
+                  type="submit"
+                  className="rounded-lg px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50"
+                >
+                  ניתוק
+                </button>
+              </form>
+            )}
+          </div>
         </section>
       )}
     </div>

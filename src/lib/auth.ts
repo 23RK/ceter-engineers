@@ -23,8 +23,8 @@ export const getSession = cache(async () => {
 
 /**
  * The signed-in user, re-read from the DB on every request (once per
- * request, via `cache`) - so removing someone's email from the User table
- * locks them out immediately, even with a still-valid session cookie.
+ * request, via `cache`). A session is rejected if the user no longer has an
+ * email + password, or if the password changed after this session signed in.
  */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const session = await getSession();
@@ -32,11 +32,31 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
 
   const user = await prisma.user.findUnique({
     where: { id: session.userId },
-    select: { id: true, name: true, email: true, role: true, color: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      color: true,
+      passwordHash: true,
+      passwordChangedAt: true,
+    },
   });
-  if (!user?.email) return null;
+  if (!user?.email || !user.passwordHash) return null;
+  if (
+    user.passwordChangedAt &&
+    Math.floor(user.passwordChangedAt.getTime() / 1000) > session.authTime
+  ) {
+    return null;
+  }
 
-  return { ...user, email: user.email };
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    color: user.color,
+  };
 });
 
 /** Every page and Server Action calls this - the proxy alone isn't enough. */

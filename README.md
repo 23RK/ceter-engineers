@@ -5,11 +5,10 @@
 
 ## מה יש במערכת (v1)
 
-- **התחברות** — "כניסה עם Google" אישית לכל משתמש. רק המיילים שמופיעים
-  ברשימת המורשים (טבלת `User`) יכולים להיכנס: רון (`ronketerltd@gmail.com`)
-  וגיא (`guyketerltd@gmail.com`). כל מייל אחר נחסם, כולל
-  `keterengineers@gmail.com`, שהוא בעלים של פרויקט Google Cloud אבל לא
-  נכנס למערכת.
+- **התחברות** — אימייל וסיסמה אישית לכל שותף: רון (`ronketerltd@gmail.com`)
+  וגיא (`guyketerltd@gmail.com`). שינוי סיסמה נעשה ב"הגדרות".
+- **חיבור יומן Google** — מתוך "הגדרות". כל שותף יכול לחבר רק את חשבון
+  הגוגל שלו (אותו מייל), וכל חשבון אחר נדחה.
 - **לוח בקרה** — סיכום כללי: משימות פתוחות ובאיחור, פרויקטים פעילים, עומס
   עבודה לפי שותף, מועדי יעד קרובים, פעילות אחרונה ופילוח פרויקטים לפי סטטוס.
 - **משימות** — לוח קנבן משותף (לביצוע / בתהליך / לבדיקה / הושלם) עם גרירה
@@ -50,10 +49,11 @@ PostgreSQL בענן, טייר חינמי) + [Vercel](https://vercel.com) (אחס
    | --- | --- |
    | `DATABASE_URL` | ה-connection string מ-Neon (שלב 1) |
    | `SESSION_SECRET` | מחרוזת אקראית וארוכה משלכם (40+ תווים) — למשל תוצאה של [מחולל סיסמאות אקראי](https://1password.com/password-generator) באורך 40. **אל תשתמשו בערך שמופיע במקום אחר בפומבי** — זה המפתח שחותם על ההתחברות שלכם. |
-   | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_URL`, `TOKEN_ENCRYPTION_KEY` | ר' "הגדרת כניסה עם Google" למטה. בלעדיהם אי אפשר להיכנס למערכת. |
+   | `INITIAL_PASSWORD_RON`, `INITIAL_PASSWORD_GUY` | סיסמאות ראשוניות, זמניות. ר' "סיסמאות" למטה. |
+   | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_URL`, `TOKEN_ENCRYPTION_KEY` | לחיבור היומן. ר' "חיבור יומן Google" למטה. |
 
 5. לחצו **Deploy** וחכו כדקה-שתיים. תהליך הבנייה מריץ אוטומטית את הגדרת
-   מסד הנתונים ואת יצירת חשבון ההתחברות — אין צורך בשום פעולה נוספת.
+   מסד הנתונים ואת הגדרת הסיסמאות הראשוניות — אין צורך בשום פעולה נוספת.
 6. בסיום תקבלו קישור כמו `https://ceter-engineers.vercel.app` — זה
    הקישור למערכת, זמין גם מהמחשב וגם מהנייד (אפשר לשמור אותו כקיצור דרך
    על מסך הבית בטלפון).
@@ -61,54 +61,41 @@ PostgreSQL בענן, טייר חינמי) + [Vercel](https://vercel.com) (אחס
 כל פעם שדוחפים שינוי קוד לענף המחובר, Vercel יבנה ויפרוס גרסה חדשה
 אוטומטית לאותו קישור.
 
-## הגדרת כניסה עם Google
+## סיסמאות וחיבור יומן Google
 
-הכניסה למערכת היא רק דרך "כניסה עם Google". אותו חיבור משמש גם לסנכרון
-היומן: שותף שנכנס בפעם הראשונה מתבקש לאשר גישה ליומן Google שלו (קריאה
-וכתיבה של אירועים).
+כל ההוראות, צעד אחר צעד, נמצאות ב-
+[`docs/google-cloud-setup.md`](docs/google-cloud-setup.md):
 
-ההוראות המלאות, צעד אחר צעד, להגדרה ב-Google Cloud Console נמצאות ב-
-[`docs/google-cloud-setup.md`](docs/google-cloud-setup.md). בקצרה:
-
-1. פרויקט ב-Google Cloud עם **Google Calendar API** פעיל.
-2. **OAuth consent screen** מסוג External, במצב **In production** (לא
-   Testing, אחרת ה-refresh token פג אחרי 7 ימים).
-3. **OAuth client** מסוג Web application, עם Redirect URI:
-   `https://<הקישור-שלכם>/api/auth/google/callback`.
-4. ב-Vercel, משתני הסביבה:
-
-   | Name | Value |
-   | --- | --- |
-   | `GOOGLE_CLIENT_ID` | מה-Google Cloud Console |
-   | `GOOGLE_CLIENT_SECRET` | מה-Google Cloud Console |
-   | `APP_URL` | הקישור המלא לאתר, בלי `/` בסוף, למשל `https://ceter-engineers.vercel.app` |
-   | `TOKEN_ENCRYPTION_KEY` | 64 תווים הקסדצימליים אקראיים (`openssl rand -hex 32`). מצפין את ה-tokens של Google במסד הנתונים. **לא לשתף בשום מקום.** |
-
-### הוספה או הסרה של משתמש מורשה
-
-רשימת המורשים היא טבלת `User`: כל שורה עם `email` יכולה להיכנס. כרגע אין
-לזה מסך ניהול. מוסיפים או מסירים שורה דרך Neon (SQL Editor) או
-`npm run db:studio`. המייל נשמר באותיות קטנות.
+- **סיסמה ראשונית:** משתני הסביבה `INITIAL_PASSWORD_RON` ו-`INITIAL_PASSWORD_GUY`.
+  הסיסמה נקבעת בזמן הפריסה, ורק למי שעוד אין לו סיסמה. אחרי שכל שותף שינה
+  את הסיסמה בהגדרות, מוחקים את המשתנים.
+- **איפוס סיסמה:** איפוס `passwordHash` ב-Neon, הגדרה מחדש של המשתנה, ו-Redeploy.
+- **יומן Google:** ה-Redirect URI הוא
+  `https://ceter-engineers.vercel.app/api/google/callback`, ומשתני הסביבה הם
+  `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_URL` ו-`TOKEN_ENCRYPTION_KEY`.
+  רק `ronketerltd@gmail.com` ו-`guyketerltd@gmail.com` יכולים להתחבר. זה נאכף
+  בקוד, בבדיקות (`npm test`), וב-CHECK במסד הנתונים.
 
 ## הרצה מקומית (למי שיש Node.js)
 
 ```bash
 npm install
-cp .env.example .env      # לעדכן DATABASE_URL, SESSION_SECRET ומשתני ה-Google
-                           # (APP_URL=http://localhost:3000, ולהוסיף את
-                           #  http://localhost:3000/api/auth/google/callback כ-Redirect URI בקונסול)
+cp .env.example .env      # לעדכן DATABASE_URL, SESSION_SECRET ו-INITIAL_PASSWORD_*
+                           # (משתני ה-Google רק לחיבור יומן; מקומית: APP_URL=http://localhost:3000
+                           #  ו-Redirect URI http://localhost:3000/api/google/callback בקונסול)
 npm run db:migrate        # יוצר את הטבלאות במסד הנתונים לפי הסכמה
-npm run db:seed           # יוצר את המשתמשים המורשים + נתוני דוגמה
+npm run db:seed           # יוצר את המשתמשים, קובע סיסמאות ראשוניות + נתוני דוגמה
+npm test                  # בדיקות (גם רצות אוטומטית בכל build)
 npm run dev
 ```
 
-האתר יעלה בכתובת http://localhost:3000. נכנסים עם אחד מהמיילים המורשים.
+האתר יעלה בכתובת http://localhost:3000. נכנסים עם המייל והסיסמה הראשונית.
 
 ## טכנולוגיה
 
 Next.js 16 (App Router, TypeScript) · Tailwind CSS 4 · Prisma ORM ·
-PostgreSQL · "כניסה עם Google" (OAuth דרך `googleapis`) + עוגיית session
-חתומה (JWT, ללא ספריית auth חיצונית) · React
+PostgreSQL · כניסה באימייל וסיסמה (bcrypt) + עוגיית session חתומה (JWT,
+ללא ספריית auth חיצונית) · Google OAuth (`googleapis`) לחיבור יומן בלבד · React
 Server Actions לכל הפעולות (יצירה/עריכה/מחיקה) ללא צורך ב-API נפרד.
 
 פקודת ה-`build` מריצה אוטומטית `prisma migrate deploy` (מעדכן את מבנה
@@ -124,10 +111,11 @@ prisma/seed.ts              נתוני התחלה: המשתמשים המורשי
 src/lib/auth.ts             זיהוי המשתמש המחובר בכל בקשה (requireUser)
 src/lib/session.ts          חתימה ואימות של עוגיית ה-session (JWT)
 src/lib/crypto.ts           הצפנה/פענוח (AES-256-GCM) לטוקנים של Google
-src/lib/google/oauth.ts     תהליך ה-OAuth מול Google (כניסה + הרשאת יומן)
+src/lib/google/oauth.ts     OAuth מול Google לחיבור יומן
+src/lib/google/calendar-access.ts  מי רשאי לחבר יומן (+ calendar-access.test.ts)
 src/lib/actions/*.ts        כל הפעולות מול מסד הנתונים (Server Actions)
-src/app/login                מסך הכניסה עם Google
-src/app/api/auth/google/*    נקודות הקצה של ה-OAuth (התחלה + callback)
+src/app/login                מסך הכניסה (אימייל + סיסמה)
+src/app/api/google/*         חיבור יומן Google: connect + callback
 src/app/(app)/*              העמודים המוגנים: לוח בקרה, משימות, פרויקטים, יומן פגישות, פיתוח עסקי
 src/components/*             רכיבי UI
 ```

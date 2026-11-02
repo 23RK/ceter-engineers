@@ -46,9 +46,9 @@ enum GoogleSyncStatus {
   ERROR
 }
 
-// LEGACY - the old shared email/password login. No longer read or written
-// since sign-in moved to Google; kept until Google sign-in is verified in
-// production, then dropped in a later migration.
+// LEGACY - the old shared company login, cancelled. Nothing reads or writes
+// it any more (each partner now has their own password on User); the table
+// is dropped in a later migration.
 model Credential {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -56,9 +56,8 @@ model Credential {
   createdAt    DateTime @default(now())
 }
 
-// A person who can sign in. Sign-in is "Sign in with Google" only, and a
-// row here with a matching `email` IS the allow-list - any Google account
-// whose email isn't on a User row is rejected.
+// A person who can sign in, with their own email + password. Only rows
+// with both an email and a password can sign in.
 model User {
   id        String   @id @default(cuid())
   name      String
@@ -66,6 +65,14 @@ model User {
   role      UserRole @default(PARTNER)
   color     String   @default("#2563eb")
   createdAt DateTime @default(now())
+
+  passwordHash      String? // bcrypt
+  // Sessions signed in before this moment are rejected (sign out everywhere
+  // on password change).
+  passwordChangedAt DateTime?
+  // Brute-force protection: too many wrong passwords lock the account briefly.
+  failedLoginCount  Int       @default(0)
+  lockedUntil       DateTime?
 
   assignedTasks Task[]        @relation("AssignedTasks")
   createdTasks  Task[]        @relation("CreatedTasks")
@@ -174,8 +181,10 @@ model Meeting {
 }
 
 // One row per partner whose Google Calendar is synced - created when they
-// sign in with Google and grant calendar access. Access/refresh tokens are
-// stored encrypted (see src/lib/crypto.ts).
+// connect it from Settings. Access/refresh tokens are stored encrypted (see
+// src/lib/crypto.ts). `googleEmail` is restricted by a DB CHECK constraint
+// (migration 20261102120000_password_login) to the two partner accounts,
+// and the app additionally requires it to equal the owning user's email.
 model GoogleAccount {
   id                    String    @id @default(cuid())
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)

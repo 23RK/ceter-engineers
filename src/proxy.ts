@@ -9,9 +9,9 @@ import {
 
 const PUBLIC_PATHS = ["/login"];
 
-// A coarse, cookie-only gate. The real check (is this user still on the
-// allow-list?) happens against the DB in requireUser(), which every page and
-// Server Action calls.
+// A coarse, cookie-only gate. The real check (does this user still exist,
+// was the password changed since?) happens against the DB in requireUser(),
+// which every page and Server Action calls.
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isPublic = PUBLIC_PATHS.some(
@@ -32,7 +32,7 @@ export async function proxy(request: NextRequest) {
   if (shouldRenewSession(session)) {
     response.cookies.set(
       SESSION_COOKIE,
-      await signSession(session.userId),
+      await signSession(session.userId, session.authTime),
       SESSION_COOKIE_OPTIONS
     );
   }
