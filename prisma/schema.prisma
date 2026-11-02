@@ -37,7 +37,7 @@ enum LeadStatus {
 }
 
 enum UserRole {
-  ADMIN // system admin (the company mailbox) - sees everything, isn't a partner
+  ADMIN // reserved - no admin user for now (only רון and גיא sign in)
   PARTNER // רון / גיא - shown in assignee lists, syncs a Google Calendar
 }
 

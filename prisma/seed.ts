@@ -31,18 +31,6 @@ async function main() {
     },
   });
 
-  await prisma.user.upsert({
-    where: { id: "admin-keter" },
-    update: {},
-    create: {
-      id: "admin-keter",
-      name: "מנהל מערכת",
-      email: "keterengineers@gmail.com",
-      role: "ADMIN",
-      color: "#64748b",
-    },
-  });
-
   const existingProjects = await prisma.project.count();
   if (existingProjects > 0) {
     console.log("כבר קיימים פרויקטים במסד הנתונים - מדלג על נתוני דוגמה.");
