@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
+import { USER_OPTION_SELECT } from "@/lib/types";
 import { requireUser } from "@/lib/auth";
 import { TasksClient } from "@/components/tasks/tasks-client";
-import { USER_OPTION_SELECT } from "@/lib/types";
 
 export default async function TasksPage() {
   const user = await requireUser();
