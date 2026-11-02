@@ -30,6 +30,24 @@ enum StageStatus {
   DONE // הושלם
 }
 
+// שכר טרחה: how a project's fee is set (SPEC §3.5).
+enum FeeModel {
+  MILESTONES // סכום כולל לפי אבני דרך
+  RETAINER // ריטיינר חודשי
+  PERCENTAGE // אחוז מעלות הבנייה
+}
+
+// A contact's role in a project (SPEC §3.4 "אנשי קשר").
+enum ContactRole {
+  CLIENT // לקוח
+  DEVELOPER // יזם
+  CONTRACTOR // קבלן מבצע
+  ARCHITECT // אדריכל
+  ENGINEER // מהנדס
+  CONSULTANT // יועץ
+  OTHER // אחר
+}
+
 enum TaskStatus {
   TODO
   IN_PROGRESS
@@ -87,6 +105,12 @@ model User {
   meetings      Meeting[]
   googleAccount GoogleAccount?
   meetingSyncs  MeetingGoogleSync[]
+
+  projectUpdates     ProjectUpdate[]
+  uploadedFiles      ProjectFile[]
+  supervisionReports SupervisionReport[]
+  notifications      Notification[]      @relation("NotificationRecipient")
+  sentNotifications  Notification[]      @relation("NotificationActor")
 }
 
 model Project {
@@ -111,9 +135,26 @@ model Project {
   owner   User?   @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   ownerId String?
 
-  tasks      Task[]
-  milestones Milestone[]
-  activities Activity[]
+  // שכר טרחה (SPEC §3.5). Which fields apply depends on feeModel; amounts in ₪.
+  feeModel            FeeModel?
+  feeTotal            Float? // MILESTONES: סכום כולל
+  feeMonthly          Float? // RETAINER: סכום לחודש
+  feeStartDate        DateTime? // RETAINER: תאריך התחלה
+  feeEndDate          DateTime? // RETAINER: תאריך סיום
+  feePercent          Float? // PERCENTAGE: אחוז
+  feeConstructionCost Float? // PERCENTAGE: עלות בנייה משוערת
+  feeNotes            String?
+
+  tasks              Task[]
+  milestones         Milestone[]
+  activities         Activity[]
+  payments           Payment[]
+  updates            ProjectUpdate[]
+  files              ProjectFile[]
+  contacts           ProjectContact[]
+  supervisionReports SupervisionReport[]
+  changeOrders       ChangeOrder[]
+  notifications      Notification[]
 
   @@index([department])
   @@index([ownerId])
@@ -136,7 +177,166 @@ model Milestone {
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId String
 
+  payments Payment[]
+
   @@index([projectId, order])
+}
+
+// One row of a project's לוח גבייה (SPEC §3.5). A payment can be tied to a
+// stage: when that stage is done and the payment isn't paid, the app alerts.
+model Payment {
+  id            String    @id @default(cuid())
+  title         String?
+  amount        Float
+  dueDate       DateTime?
+  invoiceIssued Boolean   @default(false) // חשבונית הוצאה
+  paid          Boolean   @default(false)
+  paidAt        DateTime?
+  order         Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+  stage     Milestone? @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  stageId   String?
+
+  @@index([projectId, order])
+  @@index([stageId])
+}
+
+// A note in a project's "עדכונים" thread, with attachments; tagging a partner
+// creates a Notification for them.
+model ProjectUpdate {
+  id        String   @id @default(cuid())
+  body      String
+  createdAt DateTime @default(now())
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+  author    User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  authorId  String?
+
+  files         ProjectFile[]
+  notifications Notification[]
+
+  @@index([projectId, createdAt])
+}
+
+// A project document: an uploaded file (bytes in ProjectFileData) or a link
+// (e.g. Google Drive). Attachments of an update have updateId set.
+model ProjectFile {
+  id        String   @id @default(cuid())
+  name      String
+  url       String? // a link instead of an upload
+  mimeType  String?
+  size      Int?
+  createdAt DateTime @default(now())
+
+  project      Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId    String
+  update       ProjectUpdate? @relation(fields: [updateId], references: [id], onDelete: Cascade)
+  updateId     String?
+  uploadedBy   User?          @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  uploadedById String?
+
+  data ProjectFileData?
+
+  @@index([projectId, createdAt])
+  @@index([updateId])
+}
+
+// The bytes of an uploaded file, kept apart so lists never load them.
+model ProjectFileData {
+  file   ProjectFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  fileId String      @id
+  data   Bytes
+}
+
+// The general contacts list (מאגר אנשי קשר). Projects link to it.
+model Contact {
+  id        String   @id @default(cuid())
+  name      String
+  company   String?
+  phone     String?
+  email     String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects ProjectContact[]
+
+  @@index([name])
+}
+
+model ProjectContact {
+  id        String      @id @default(cuid())
+  role      ContactRole
+  roleNote  String? // e.g. "יועץ חשמל"
+  createdAt DateTime    @default(now())
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId String
+
+  @@unique([projectId, contactId, role])
+  @@index([contactId])
+}
+
+// יזמים: דוחות פיקוח (SPEC §3.4).
+model SupervisionReport {
+  id              String   @id @default(cuid())
+  visitDate       DateTime
+  performedByName String? // someone who isn't a partner
+  reportSent      Boolean  @default(false)
+  fileUrl         String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  project       Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId     String
+  performedBy   User?   @relation(fields: [performedById], references: [id], onDelete: SetNull)
+  performedById String?
+
+  @@index([projectId, visitDate])
+}
+
+// וילות: שינויים ותוספות (SPEC §3.4).
+model ChangeOrder {
+  id             String    @id @default(cuid())
+  description    String
+  cost           Float?
+  clientApproved Boolean   @default(false)
+  date           DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+
+  @@index([projectId])
+}
+
+// An in-app notification (e.g. a partner was tagged in an update).
+model Notification {
+  id        String    @id @default(cuid())
+  message   String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user      User           @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  actor     User?          @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorId   String?
+  project   Project?       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String?
+  update    ProjectUpdate? @relation(fields: [updateId], references: [id], onDelete: Cascade)
+  updateId  String?
+
+  @@index([userId, readAt, createdAt])
+  @@index([updateId])
 }
 
 // The default stages a new project of a department starts with (SPEC §3.3).

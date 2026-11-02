@@ -208,12 +208,49 @@ export async function renameProject(
   return { ok: true, ts: Date.now() };
 }
 
-export async function deleteProject(projectId: string) {
-  await requireUser();
-  const project = await prisma.project.delete({
+/** "העבר לארכיון" (SPEC §3.4): the safe default instead of deleting. */
+export async function setProjectArchived(
+  projectId: string,
+  archived: boolean
+): Promise<ActionState> {
+  const user = await requireUser();
+  const project = await prisma.project.update({
     where: { id: projectId },
-    select: { department: true },
+    data: { archivedAt: archived ? new Date() : null },
+    select: { name: true },
   });
+  await prisma.activity.create({
+    data: {
+      message: archived
+        ? `${user.name} העביר/ה את הפרויקט "${project.name}" לארכיון`
+        : `${user.name} החזיר/ה את הפרויקט "${project.name}" מהארכיון`,
+      actorId: user.id,
+      projectId,
+    },
+  });
+  revalidateProjectLists();
+  revalidatePath(`/projects/${projectId}`);
+  return { ok: true, ts: Date.now() };
+}
+
+/**
+ * Full delete - only after a double confirmation (SPEC §3.4): the screen asks
+ * twice, and the project's name must be typed exactly.
+ */
+export async function deleteProject(
+  projectId: string,
+  confirmName: string
+): Promise<ActionState> {
+  await requireUser();
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { name: true, department: true },
+  });
+  if (!project) return { error: "הפרויקט לא נמצא" };
+  if (confirmName.trim() !== project.name.trim()) {
+    return { error: "השם שהוקלד לא תואם לשם הפרויקט. הפרויקט לא נמחק." };
+  }
+  await prisma.project.delete({ where: { id: projectId } });
   revalidateProjectLists();
   redirect(departmentHref(project.department));
 }

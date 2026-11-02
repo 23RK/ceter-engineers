@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { departmentBySlug } from "@/lib/departments";
 import { isSortKey, toProjectRow } from "@/lib/project-list";
+import { feeProgress } from "@/lib/fees";
 import { PROJECT_STATUSES } from "@/lib/constants";
 import { NewProjectButton } from "@/components/projects/new-project-button";
 import { UnassignedProjectsBanner } from "@/components/projects/unassigned-banner";
@@ -48,6 +49,14 @@ export default async function DepartmentPage({
             createdAt: true,
           },
         },
+        feeModel: true,
+        feeTotal: true,
+        feeMonthly: true,
+        feeStartDate: true,
+        feeEndDate: true,
+        feePercent: true,
+        feeConstructionCost: true,
+        payments: { select: { amount: true, paid: true } },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -64,7 +73,26 @@ export default async function DepartmentPage({
     }),
   ]);
 
-  const rows = projects.map((p) => toProjectRow(p));
+  const rows = projects.map(
+    ({
+      payments,
+      feeModel,
+      feeTotal,
+      feeMonthly,
+      feeStartDate,
+      feeEndDate,
+      feePercent,
+      feeConstructionCost,
+      ...p
+    }) =>
+      toProjectRow(
+        p,
+        feeProgress(
+          { feeModel, feeTotal, feeMonthly, feeStartDate, feeEndDate, feePercent, feeConstructionCost },
+          payments
+        )
+      )
+  );
   const activeCount = rows.filter(
     (r) => !r.archivedAt && r.status !== "DONE" && r.status !== "CANCELED"
   ).length;
