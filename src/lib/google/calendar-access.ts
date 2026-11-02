@@ -59,6 +59,24 @@ export function checkCalendarAccount({
   return { ok: true, email: expected };
 }
 
+/** Where in the connection a technical failure happened (logged, and shown as a hint). */
+export type ConnectStep =
+  | "token_exchange" // trading the code for tokens at Google
+  | "id_token" // verifying Google's signed ID token
+  | "no_refresh_token" // Google didn't return a refresh token
+  | "encrypt" // encrypting the tokens (TOKEN_ENCRYPTION_KEY)
+  | "database"; // saving them
+
+/** A failure at a known step; `cause` is kept for a safe log line only. */
+export class ConnectStepError extends Error {
+  constructor(
+    public step: ConnectStep,
+    public cause: unknown
+  ) {
+    super(`Google calendar connection failed at ${step}`);
+  }
+}
+
 export type OAuthResult = {
   googleEmail: string | null | undefined;
   googleEmailVerified: boolean | null | undefined;
@@ -81,9 +99,20 @@ export type ConnectDeps = {
   revokeToken(token: string): Promise<void>;
 };
 
+/** The general reason shown in Settings (SPEC: הרשאה חסרה / שגיאה מול גוגל / שגיאת שמירה / חשבון לא מורשה). */
+export type ConnectFailure = "google" | "save";
+
 export type ConnectOutcome =
   | { ok: true }
-  | { ok: false; error: CalendarAccessError | "failed"; googleEmail?: string };
+  | { ok: false; error: CalendarAccessError; googleEmail?: string }
+  | { ok: false; error: ConnectFailure; step: ConnectStep; cause: unknown };
+
+const SAVE_STEPS: ConnectStep[] = ["encrypt", "database"];
+function failure(e: unknown, fallback: ConnectStep): ConnectOutcome {
+  const step = e instanceof ConnectStepError ? e.step : fallback;
+  const cause = e instanceof ConnectStepError ? e.cause : e;
+  return { ok: false, error: SAVE_STEPS.includes(step) ? "save" : "google", step, cause };
+}
 
 /**
  * Finishes the calendar OAuth flow for the signed-in user. A rejected account
@@ -96,8 +125,8 @@ export async function completeCalendarConnection(
   let result: OAuthResult;
   try {
     result = await deps.exchangeCode(code);
-  } catch {
-    return { ok: false, error: "failed" };
+  } catch (e) {
+    return failure(e, "token_exchange");
   }
 
   const check = checkCalendarAccount({
@@ -118,7 +147,10 @@ export async function completeCalendarConnection(
   }
 
   if (!result.accessToken || !result.refreshToken) {
-    return { ok: false, error: "failed" };
+    return failure(
+      new ConnectStepError("no_refresh_token", new Error(result.accessToken ? "no refresh token" : "no access token")),
+      "no_refresh_token"
+    );
   }
 
   try {
@@ -127,8 +159,8 @@ export async function completeCalendarConnection(
       refreshToken: result.refreshToken,
       expiryDate: result.expiryDate ?? null,
     });
-  } catch {
-    return { ok: false, error: "failed" };
+  } catch (e) {
+    return failure(e, "database");
   }
   return { ok: true };
 }

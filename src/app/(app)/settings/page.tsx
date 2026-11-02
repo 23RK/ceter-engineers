@@ -11,15 +11,40 @@ import {
 import { ROLE_LABELS, requireUser } from "@/lib/auth";
 import { getCalendarConnection, isGoogleConfigured } from "@/lib/google/oauth";
 import { SYNCABLE_GOOGLE_ACCOUNTS } from "@/lib/google/calendar-access";
+import { googleConfigIssues } from "@/lib/google/env";
 import { disconnectCalendarAction } from "@/lib/actions/auth";
 import { ChangePasswordForm } from "@/components/change-password-form";
 
-function calendarErrorMessage(error: string, ownEmail: string, googleEmail?: string) {
+const STEP_HINTS: Record<string, string> = {
+  token_exchange: "בשלב החלפת הקוד ב-token מול Google",
+  id_token: "בשלב אימות זהות החשבון מול Google",
+  no_refresh_token: "Google לא החזיר הרשאה קבועה (refresh token)",
+  encrypt: "בשלב הצפנת ההרשאה (מפתח TOKEN_ENCRYPTION_KEY)",
+  database: "בשלב השמירה במסד הנתונים",
+};
+
+/** Google's own error codes, explained (they're not secret). */
+const GOOGLE_CODES: Record<string, string> = {
+  invalid_client: "GOOGLE_CLIENT_ID או GOOGLE_CLIENT_SECRET לא תואמים ללקוח ב-Google Cloud",
+  unauthorized_client: "הלקוח ב-Google Cloud לא מורשה לסוג החיבור הזה",
+  invalid_grant: "הקוד מ-Google פג או כבר נוצל. נסו שוב",
+  redirect_uri_mismatch: "ה-Redirect URI ב-Google Cloud לא תואם ל-APP_URL",
+};
+
+/** The general reason (missing permission / Google error / save error / account not allowed). */
+function calendarErrorMessage(
+  error: string,
+  ownEmail: string,
+  googleEmail?: string,
+  step?: string,
+  code?: string
+) {
+  const hint = [step && STEP_HINTS[step], code && (GOOGLE_CODES[code] ?? code)].filter(Boolean).join(". ");
   switch (error) {
     case "wrong_account":
       return (
         <>
-          החיבור נדחה: נבחר חשבון Google אחר
+          <b>חשבון לא מורשה:</b> נבחר חשבון Google אחר
           {googleEmail && (
             <>
               {" "}(<bdi>{googleEmail}</bdi>)
@@ -29,17 +54,51 @@ function calendarErrorMessage(error: string, ownEmail: string, googleEmail?: str
         </>
       );
     case "not_syncable":
-      return "למשתמש הזה אין אפשרות לחבר יומן Google.";
+      return (
+        <>
+          <b>חשבון לא מורשה:</b> למשתמש הזה אין אפשרות לחבר יומן Google.
+        </>
+      );
     case "unverified":
-      return "החיבור נדחה: Google לא אישר את כתובת המייל של החשבון.";
+      return (
+        <>
+          <b>חשבון לא מורשה:</b> Google לא אישר את כתובת המייל של החשבון.
+        </>
+      );
     case "scope":
-      return "ההרשאה ליומן לא סומנה במסך האישור של Google. יש לסמן אותה ולנסות שוב.";
+      return (
+        <>
+          <b>הרשאה חסרה:</b> ההרשאה ליומן לא סומנה במסך האישור של Google. יש לסמן אותה ולנסות שוב.
+        </>
+      );
     case "denied":
-      return "לא ניתנה הרשאה ליומן Google.";
+      return (
+        <>
+          <b>הרשאה חסרה:</b> לא ניתנה הרשאה ליומן Google.
+        </>
+      );
+    case "google":
+      return (
+        <>
+          <b>שגיאה מול Google.</b> {hint ? `${hint}.` : ""} נסו שוב, ואם זה חוזר, הפרטים נרשמים ב-Vercel ← Logs (חיפוש: google-calendar).
+        </>
+      );
+    case "save":
+      return (
+        <>
+          <b>שגיאת שמירה.</b> {hint ? `${hint}.` : ""} ההרשאה מ-Google התקבלה אבל לא נשמרה. הפרטים נרשמים ב-Vercel ← Logs (חיפוש: google-calendar).
+        </>
+      );
+    case "config":
+      return (
+        <>
+          <b>הגדרות השרת שגויות.</b> ראו את הפירוט למטה.
+        </>
+      );
     case "not_configured":
       return "חיבור ל-Google עוד לא הוגדר בשרת (חסרים משתני סביבה, ראו docs/google-cloud-setup.md).";
     case "state":
-      return "פג תוקף ניסיון החיבור. נסו שוב.";
+      return "פג תוקף ניסיון החיבור, או שהוא התחיל בחלון אחר. נסו שוב.";
     default:
       return "החיבור ליומן Google נכשל. נסו שוב.";
   }
@@ -52,10 +111,14 @@ export default async function SettingsPage({
     calendar_error?: string;
     calendar_connected?: string;
     google_email?: string;
+    calendar_step?: string;
+    calendar_code?: string;
   }>;
 }) {
   const user = await requireUser();
-  const { calendar_error, calendar_connected, google_email } = await searchParams;
+  const { calendar_error, calendar_connected, google_email, calendar_step, calendar_code } =
+    await searchParams;
+  const configIssues = googleConfigIssues();
 
   const canSyncCalendar = SYNCABLE_GOOGLE_ACCOUNTS.includes(user.email);
   const connection = canSyncCalendar ? await getCalendarConnection(user.id) : null;
@@ -147,7 +210,9 @@ export default async function SettingsPage({
           {calendar_error && (
             <p className="mb-3 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
               <CircleAlert size={15} className="mt-0.5 shrink-0" />
-              <span>{calendarErrorMessage(calendar_error, user.email, google_email)}</span>
+              <span>
+                {calendarErrorMessage(calendar_error, user.email, google_email, calendar_step, calendar_code)}
+              </span>
             </p>
           )}
 
@@ -164,6 +229,20 @@ export default async function SettingsPage({
               </>
             )}
           </p>
+
+          {configIssues.length > 0 && (
+            <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <p className="mb-1 font-semibold">בעיות בהגדרות השרת (Vercel ← Settings ← Environment Variables):</p>
+              <ul className="list-inside list-disc">
+                {configIssues.map((i, n) => (
+                  <li key={n}>
+                    <bdi dir="ltr">{i.name}</bdi>: {i.problem}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1">אחרי תיקון: Redeploy.</p>
+            </div>
+          )}
 
           <div className="mt-4 flex flex-wrap gap-2">
             {isGoogleConfigured() ? (
