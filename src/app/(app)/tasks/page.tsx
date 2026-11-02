@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { USER_OPTION_SELECT } from "@/lib/types";
 import { requireUser } from "@/lib/auth";
 import { TasksClient } from "@/components/tasks/tasks-client";
 
@@ -7,7 +8,7 @@ export default async function TasksPage() {
 
   const [tasks, users, projects] = await Promise.all([
     prisma.task.findMany({
-      include: { assignee: true, project: true },
+      include: { assignee: { select: USER_OPTION_SELECT }, project: true },
       orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
     }),
     prisma.user.findMany({

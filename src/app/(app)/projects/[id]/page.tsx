@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { USER_OPTION_SELECT } from "@/lib/types";
 import { requireUser } from "@/lib/auth";
 import { departmentHref, departmentMeta } from "@/lib/departments";
 import { ProjectHeader } from "@/components/projects/project-header";
@@ -21,7 +22,7 @@ export default async function ProjectDetailPage({
       where: { id },
       include: {
         milestones: true,
-        tasks: { include: { assignee: true, project: true } },
+        tasks: { include: { assignee: { select: USER_OPTION_SELECT }, project: true } },
       },
     }),
     prisma.user.findMany({
