@@ -13,7 +13,9 @@ import {
 } from "@/lib/actions/finance";
 import type { ActionState } from "@/lib/actions/tasks";
 import {
+  BILLING_DAYS,
   FEE_MODELS,
+  PAYMENT_TERMS,
   feeSummary,
   paymentsDueForDoneStages,
   retainerMonths,
@@ -33,6 +35,8 @@ export type PaymentInfo = {
   order: number;
 };
 
+type Billing = { feeBillingDay: number | null; feePaymentTermsDays: number | null };
+
 type StageOption = { id: string; title: string; status: StageStatus };
 
 type Change = { id: string; patch: PaymentPatch } | { id: string; remove: true };
@@ -45,12 +49,15 @@ const inputClass =
 export function ProjectFinance({
   projectId,
   terms,
+  billing,
   feeNotes,
   payments: serverPayments,
   stages,
 }: {
   projectId: string;
   terms: FeeTerms;
+  /** Retainer: billing day and payment terms. */
+  billing: Billing;
   feeNotes: string | null;
   payments: PaymentInfo[];
   stages: StageOption[];
@@ -126,7 +133,7 @@ export function ProjectFinance({
         />
       </div>
 
-      <FeeTermsForm projectId={projectId} terms={terms} feeNotes={feeNotes} />
+      <FeeTermsForm projectId={projectId} terms={terms} billing={billing} feeNotes={feeNotes} />
 
       {/* לוח גבייה */}
       <div className="rounded-2xl border border-black/5 bg-white p-4 shadow-sm sm:p-6">
@@ -166,7 +173,17 @@ function SummaryBox({ label, value, tone }: { label: string; value: string | nul
   );
 }
 
-function FeeTermsForm({ projectId, terms, feeNotes }: { projectId: string; terms: FeeTerms; feeNotes: string | null }) {
+function FeeTermsForm({
+  projectId,
+  terms,
+  billing,
+  feeNotes,
+}: {
+  projectId: string;
+  terms: FeeTerms;
+  billing: Billing;
+  feeNotes: string | null;
+}) {
   const [model, setModel] = useState<FeeModel | "">(terms.feeModel ?? "");
   const [state, action, pending] = useActionState<ActionState, FormData>(
     saveFeeTerms.bind(null, projectId),
@@ -222,15 +239,34 @@ function FeeTermsForm({ projectId, terms, feeNotes }: { projectId: string; terms
               <input name="feeMonthly" inputMode="decimal" defaultValue={terms.feeMonthly ?? ""} className={inputClass} />
             </Field>
             <div className="hidden sm:block" />
-            <Field label="תאריך התחלה">
+            <Field label="תחילת התקופה (החודש הראשון שמחויב)">
               <input type="date" name="feeStartDate" defaultValue={toDateInputValue(terms.feeStartDate)} className={inputClass} />
             </Field>
-            <Field label="תאריך סיום">
+            <Field label="סוף התקופה (החודש האחרון שמחויב)">
               <input type="date" name="feeEndDate" defaultValue={toDateInputValue(terms.feeEndDate)} className={inputClass} />
             </Field>
-            {months !== null && terms.feeModel === "RETAINER" && (
-              <p className="text-xs text-black/50 sm:col-span-2">{months} חודשים לפי התאריכים השמורים.</p>
-            )}
+            <Field label="יום הגבייה בחודש">
+              <select name="feeBillingDay" defaultValue={String(billing.feeBillingDay ?? 1)} className={inputClass}>
+                {BILLING_DAYS.map((d) => (
+                  <option key={d.value} value={d.value}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="תנאי תשלום">
+              <select name="feePaymentTermsDays" defaultValue={String(billing.feePaymentTermsDays ?? 0)} className={inputClass}>
+                {PAYMENT_TERMS.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <p className="text-xs text-black/50 sm:col-span-2">
+              לכל חודש בתקופה נוצר תשלום אחד. תאריך היעד מחושב מיום הגבייה ומתנאי התשלום. לדוגמה: חיוב ב-1 למרץ בשוטף+30 = לתשלום עד 30 באפריל.
+              {months !== null && terms.feeModel === "RETAINER" && ` לפי התאריכים השמורים: ${months} חודשים.`}
+            </p>
           </>
         )}
         {model === "PERCENTAGE" && (

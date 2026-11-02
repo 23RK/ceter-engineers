@@ -94,3 +94,20 @@ export function missingTemplateTitles(
   const have = new Set(stageTitles.map((t) => t.trim()));
   return templateTitles.filter((t) => !have.has(t.trim()));
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Planned dates spread evenly between the project's start and end: stage i
+ * (of n) is due at the end of its equal slice, so the last one is due on the
+ * end date. Dates are date-only ("yyyy-mm-dd"). Empty when the range is invalid.
+ */
+export function spreadDueDates(start: string, end: string, n: number): string[] {
+  const s = new Date(start).getTime();
+  const e = new Date(end).getTime();
+  if (!n || Number.isNaN(s) || Number.isNaN(e) || e <= s) return [];
+  const days = Math.round((e - s) / DAY_MS);
+  return Array.from({ length: n }, (_, i) =>
+    new Date(s + Math.round((days * (i + 1)) / n) * DAY_MS).toISOString().slice(0, 10)
+  );
+}

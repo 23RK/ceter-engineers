@@ -11,6 +11,9 @@ const heebo = Heebo({
 export const metadata: Metadata = {
   title: "כתר הנדסה | ניהול פרויקטים",
   description: "מערכת ניהול משימות, פרויקטים ולוחות זמנים - כתר הנדסה",
+  applicationName: "כתר הנדסה",
+  // Home-screen name on iPhone (the icon itself is app/apple-icon.png).
+  appleWebApp: { title: "כתר הנדסה", statusBarStyle: "black-translucent" },
 };
 
 // "cover" so the mobile bottom bar can pad itself for the iPhone home

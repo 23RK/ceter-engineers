@@ -35,6 +35,10 @@ export async function saveFeeTerms(
   if (numbers.feePercent != null && numbers.feePercent > 100) {
     return { error: "האחוז צריך להיות בין 0 ל-100" };
   }
+  const billingDay = num(formData.get("feeBillingDay"));
+  const termsDays = num(formData.get("feePaymentTermsDays"));
+  if (billingDay != null && ![0, 1, 10].includes(billingDay)) return { error: "יום גבייה לא חוקי" };
+  if (termsDays != null && ![0, 30, 60].includes(termsDays)) return { error: "תנאי תשלום לא חוקיים" };
   const feeStartDate = date(formData.get("feeStartDate"));
   const feeEndDate = date(formData.get("feeEndDate"));
   if (feeStartDate && feeEndDate && feeEndDate < feeStartDate) {
@@ -52,6 +56,8 @@ export async function saveFeeTerms(
       ...(sent("feeMonthly") && { feeMonthly: numbers.feeMonthly }),
       ...(sent("feeStartDate") && { feeStartDate }),
       ...(sent("feeEndDate") && { feeEndDate }),
+      ...(sent("feeBillingDay") && { feeBillingDay: billingDay ?? null }),
+      ...(sent("feePaymentTermsDays") && { feePaymentTermsDays: termsDays ?? null }),
       ...(sent("feePercent") && { feePercent: numbers.feePercent }),
       ...(sent("feeConstructionCost") && {
         feeConstructionCost: numbers.feeConstructionCost,
@@ -170,13 +176,15 @@ export async function generateRetainerPayments(projectId: string): Promise<Actio
       feeMonthly: true,
       feeStartDate: true,
       feeEndDate: true,
-      payments: { select: { dueDate: true, order: true } },
+      feeBillingDay: true,
+      feePaymentTermsDays: true,
+      payments: { select: { title: true, order: true } },
     },
   });
   if (!project) return { error: "הפרויקט לא נמצא" };
   const rows = retainerSchedule(
     project,
-    project.payments.map((p) => p.dueDate)
+    project.payments.map((p) => p.title)
   );
   if (rows.length === 0) {
     return { error: "אין חודשים חדשים להוספה. בדקו סכום לחודש ותאריכי התחלה וסיום." };

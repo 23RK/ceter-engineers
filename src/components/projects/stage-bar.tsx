@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check } from "lucide-react";
 import type { StageStatus } from "@prisma/client";
 import { currentStage, sortStages } from "@/lib/stages";
@@ -27,14 +27,33 @@ export function StageBar({ stages }: { stages: Stage[] }) {
   const doneCount = sorted.filter((s) => s.status === "DONE").length;
   const scroller = useRef<HTMLOListElement>(null);
 
-  // Start scrolled to the current stage (16 stages don't fit on a phone).
+  // Which sides have more stages out of view (RTL: scrollLeft is 0 at the
+  // start/right and negative towards the left). Updated from scroll / resize
+  // callbacks, and used to fade the cut-off edge instead of chopping a label.
+  const [more, setMore] = useState({ start: false, end: false });
   useEffect(() => {
-    const el = scroller.current?.querySelector<HTMLElement>("[data-current]");
-    if (el && scroller.current) {
-      const box = scroller.current;
-      box.scrollLeft = el.offsetLeft - box.clientWidth / 2 + el.clientWidth / 2;
-    }
+    const box = scroller.current;
+    if (!box) return;
+    const measure = () => {
+      const max = box.scrollWidth - box.clientWidth;
+      const pos = Math.abs(box.scrollLeft);
+      setMore({ start: pos > 2, end: max - pos > 2 });
+    };
+    // Start with the current stage in view (16 stages don't fit on a phone).
+    box.querySelector<HTMLElement>("[data-current]")?.scrollIntoView({ inline: "center", block: "nearest" });
+    const ro = new ResizeObserver(measure);
+    ro.observe(box);
+    box.addEventListener("scroll", measure, { passive: true });
+    return () => {
+      ro.disconnect();
+      box.removeEventListener("scroll", measure);
+    };
   }, []);
+  const fade = 28;
+  const mask =
+    more.start || more.end
+      ? `linear-gradient(to left, ${more.start ? "transparent" : "black"} 0, black ${fade}px, black calc(100% - ${fade}px), ${more.end ? "transparent" : "black"} 100%)`
+      : undefined;
 
   if (sorted.length === 0) {
     return (
@@ -62,6 +81,7 @@ export function StageBar({ stages }: { stages: Stage[] }) {
         ref={scroller}
         aria-label="שלבי הפרויקט"
         className="relative flex overflow-x-auto pb-1 [scrollbar-width:thin]"
+        style={{ maskImage: mask, WebkitMaskImage: mask }}
       >
         {sorted.map((stage, i) => {
           const done = stage.status === "DONE";
@@ -72,7 +92,7 @@ export function StageBar({ stages }: { stages: Stage[] }) {
             <li
               key={stage.id}
               data-current={isCurrent || undefined}
-              className="relative flex w-24 shrink-0 flex-col items-center sm:w-28"
+              className="relative flex min-w-24 flex-1 flex-col items-center sm:min-w-28"
             >
               {/* The connecting line to the previous stage (RTL: to the right). */}
               {i > 0 && (

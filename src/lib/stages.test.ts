@@ -86,3 +86,15 @@ test("adding template stages never duplicates existing ones", () => {
     ["היתר בנייה", "שלד"]
   );
 });
+
+import { spreadDueDates } from "./stages";
+
+test("spreading planned dates evenly between start and end", () => {
+  assert.deepEqual(spreadDueDates("2026-01-01", "2026-01-31", 3), ["2026-01-11", "2026-01-21", "2026-01-31"]);
+  const sixteen = spreadDueDates("2026-01-01", "2027-12-31", 16);
+  assert.equal(sixteen.length, 16);
+  assert.equal(sixteen.at(-1), "2027-12-31");
+  assert.deepEqual([...sixteen].sort(), sixteen); // in order
+  assert.deepEqual(spreadDueDates("2026-02-01", "2026-01-01", 3), []); // end before start
+  assert.deepEqual(spreadDueDates("", "2026-01-01", 3), []);
+});

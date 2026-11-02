@@ -9,9 +9,11 @@ import type { UserOption } from "@/lib/types";
 export function NewProjectButton({
   department,
   users,
+  templates,
 }: {
   department?: Department;
   users: UserOption[];
+  templates?: { department: Department; title: string }[];
 }) {
   return (
     <Modal
@@ -27,6 +29,7 @@ export function NewProjectButton({
         <ProjectForm
           defaultDepartment={department}
           users={users}
+          templates={templates}
           onClose={close}
         />
       )}

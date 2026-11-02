@@ -44,6 +44,7 @@ export default async function DashboardPage() {
     urgentLeadTasks,
     unassignedProjectsCount,
     monthInspections,
+    unpaidInspections,
   ] = await Promise.all([
     // All open tasks (a small table): the lists, counts and workload come from it.
     prisma.task.findMany({
@@ -106,6 +107,12 @@ export default async function DashboardPage() {
       },
       select: { status: true, reportSent: true },
     }),
+    // Open debt from בדק בית: carried out and not (fully) paid.
+    prisma.inspection.findMany({
+      where: { status: { in: ["DONE", "REPORT_SENT", "COMPLETED"] }, paymentStatus: { not: "PAID" } },
+      select: { id: true, clientName: true, date: true, price: true, amountPaid: true },
+      orderBy: { date: "asc" },
+    }),
   ]);
 
   const isLate = (d: Date | null) => !!d && d.getTime() < today.getTime();
@@ -118,6 +125,11 @@ export default async function DashboardPage() {
     (t) => !t.project?.department && isLate(t.dueDate)
   ).length;
   const collection = expectedCollection(unpaidPayments, today);
+  const inspectionDebt = unpaidInspections
+    .map((i) => ({ ...i, owed: Math.max(0, (i.price ?? 0) - i.amountPaid) }))
+    .filter((i) => i.owed > 0);
+  const inspectionDebtTotal = inspectionDebt.reduce((s, i) => s + i.owed, 0);
+  const expectedTotal = collection.thisMonthTotal + collection.earlierTotal + inspectionDebtTotal;
   const awaitingReport = monthInspections.filter((i) => i.status === "DONE" && !i.reportSent).length;
 
   const workloadByUser = users.map((u) => {
@@ -154,7 +166,7 @@ export default async function DashboardPage() {
       <UnassignedProjectsBanner count={unassignedProjectsCount} />
 
       {/* Cards per department (SPEC §3.6) */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:gap-4">
         {departmentCards.map((d) => (
           <Link
             key={d.value}
@@ -200,24 +212,6 @@ export default async function DashboardPage() {
             </div>
           </div>
         </Link>
-        <a
-          href="#collection"
-          className="flex flex-col gap-3 rounded-2xl border border-black/5 bg-white p-4 shadow-sm transition hover:shadow-md"
-        >
-          <p className="flex items-center gap-2 text-sm font-bold text-brand-900">
-            <Wallet size={16} />
-            גבייה צפויה החודש
-          </p>
-          <div>
-            <p className="text-2xl font-bold text-brand-900">{formatMoney(collection.thisMonthTotal)}</p>
-            <p className="text-xs text-black/50">
-              {collection.thisMonth.length === 1 ? "תשלום אחד" : `${collection.thisMonth.length} תשלומים`}
-              {collection.earlierTotal > 0 && (
-                <span className="font-semibold text-red-600"> · ועוד {formatMoney(collection.earlierTotal)} באיחור</span>
-              )}
-            </p>
-          </div>
-        </a>
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -271,14 +265,40 @@ export default async function DashboardPage() {
         </div>
 
         <div className="flex flex-col gap-5">
-          {/* גבייה צפויה (replaces "אבני דרך החודש", SPEC §3.6) */}
+          {/* גבייה צפויה (replaces "אבני דרך החודש", SPEC §3.6): one card, by source */}
           <section id="collection" className="scroll-mt-20 rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
-            <div className="mb-4 flex items-center gap-2">
+            <div className="mb-1 flex items-center gap-2">
               <Wallet size={16} className="text-brand-600" />
               <h2 className="text-sm font-bold text-brand-900">גבייה צפויה</h2>
             </div>
-            {collection.thisMonth.length + collection.earlier.length === 0 ? (
-              <p className="text-sm text-black/40">אין תשלומים פתוחים לחודש הזה.</p>
+            <p className="text-2xl font-bold text-brand-900">{formatMoney(expectedTotal)}</p>
+            <p className="mb-3 text-xs text-black/45">החודש, כולל מה שבאיחור. ללא מע&quot;מ בבדק בית.</p>
+
+            <dl className="mb-3 flex flex-col gap-1.5 rounded-xl bg-black/[0.02] p-3 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-black/60">שכר טרחה, פרויקטים, החודש ({collection.thisMonth.length})</dt>
+                <dd className="font-semibold text-brand-900">{formatMoney(collection.thisMonthTotal)}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-black/60">שכר טרחה, באיחור מחודשים קודמים ({collection.earlier.length})</dt>
+                <dd className={`font-semibold ${collection.earlierTotal ? "text-red-600" : "text-brand-900"}`}>
+                  {formatMoney(collection.earlierTotal)}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-black/60">
+                  <Link href="/inspections?preset=unpaid" className="hover:text-brand-600 hover:underline">
+                    בדק בית: בוצעו ולא שולמו ({inspectionDebt.length})
+                  </Link>
+                </dt>
+                <dd className={`font-semibold ${inspectionDebtTotal ? "text-amber-700" : "text-brand-900"}`}>
+                  {formatMoney(inspectionDebtTotal)}
+                </dd>
+              </div>
+            </dl>
+
+            {collection.thisMonth.length + collection.earlier.length + inspectionDebt.length === 0 ? (
+              <p className="text-sm text-black/40">אין תשלומים פתוחים.</p>
             ) : (
               <ul className="flex flex-col divide-y divide-black/5">
                 {[...collection.earlier, ...collection.thisMonth].map((p) => {
@@ -293,7 +313,7 @@ export default async function DashboardPage() {
                           <p className="truncate text-sm font-medium text-brand-900">
                             {p.title ?? "תשלום"} · {formatMoney(p.amount)}
                           </p>
-                          <p className="truncate text-xs text-black/40">{p.project.name}</p>
+                          <p className="truncate text-xs text-black/40">פרויקט: {p.project.name}</p>
                         </div>
                         <span className={`shrink-0 text-xs font-medium ${late ? "text-red-600" : "text-black/40"}`}>
                           {formatDateShort(p.dueDate)}
@@ -302,6 +322,29 @@ export default async function DashboardPage() {
                     </li>
                   );
                 })}
+                {inspectionDebt.slice(0, 5).map((i) => (
+                  <li key={i.id}>
+                    <Link
+                      href={`/inspections?q=${encodeURIComponent(i.clientName)}`}
+                      className="flex items-center justify-between gap-3 py-2.5 transition hover:opacity-70"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-brand-900">
+                          {i.clientName} · {formatMoney(i.owed)}
+                        </p>
+                        <p className="truncate text-xs text-black/40">בדק בית</p>
+                      </div>
+                      <span className="shrink-0 text-xs font-medium text-black/40">{formatDateShort(i.date)}</span>
+                    </Link>
+                  </li>
+                ))}
+                {inspectionDebt.length > 5 && (
+                  <li className="pt-2">
+                    <Link href="/inspections?preset=unpaid" className="text-xs font-medium text-brand-600 hover:underline">
+                      ועוד {inspectionDebt.length - 5} בדיקות שלא שולמו
+                    </Link>
+                  </li>
+                )}
               </ul>
             )}
           </section>

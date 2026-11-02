@@ -6,11 +6,13 @@ import type { EmploymentType, InspectionKind } from "@prisma/client";
 import { Modal } from "@/components/ui/modal";
 import {
   createApartmentType,
+  deleteInspector,
   deleteRate,
   moveApartmentType,
   saveInspector,
   saveRate,
   saveVatRate,
+  setInspectorActive,
   setPriceTier,
   updateApartmentType,
 } from "@/lib/actions/inspection-settings";
@@ -106,6 +108,7 @@ export function InspectionSettings({
 // --- בודקים -----------------------------------------------------------------
 
 function Inspectors({ inspectors }: { inspectors: Inspector[] }) {
+  const { pending, error, save } = useSave();
   return (
     <Section
       title="בודקים"
@@ -124,29 +127,55 @@ function Inspectors({ inspectors }: { inspectors: Inspector[] }) {
         </Modal>
       }
     >
-      <ul className="divide-y divide-black/5">
+      {error && <p className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      <ul className={`divide-y divide-black/5 ${pending ? "opacity-60" : ""}`}>
         {inspectors.map((i) => (
-          <li key={i.id} className={`flex items-center gap-3 py-2.5 ${i.active ? "" : "opacity-50"}`}>
-            <span className="h-4 w-4 shrink-0 rounded-full" style={{ backgroundColor: i.color }} />
+          <li key={i.id} className="flex items-center gap-2 py-2.5">
+            <span className={`h-4 w-4 shrink-0 rounded-full ${i.active ? "" : "opacity-40"}`} style={{ backgroundColor: i.color }} />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-brand-900">
+              <p className={`text-sm font-semibold ${i.active ? "text-brand-900" : "text-black/45"}`}>
                 {i.name}
-                {!i.active && <span className="mr-2 text-xs font-normal text-black/50">(לא פעיל)</span>}
+                {!i.active && (
+                  <span className="mr-2 rounded-full bg-black/5 px-2 py-0.5 text-[11px] font-medium text-black/55">לא פעיל</span>
+                )}
               </p>
               <p className="truncate text-xs text-black/45">
                 {[employmentLabel(i.employmentType), i.phone, i.email].filter(Boolean).join(" · ")}
               </p>
             </div>
+            {!i.active && (
+              <button
+                type="button"
+                onClick={() => save(() => setInspectorActive(i.id, true))}
+                className="min-h-9 shrink-0 rounded-lg border border-black/10 px-2.5 text-xs font-semibold text-brand-700 hover:bg-brand-50"
+              >
+                החזרה לפעילות
+              </button>
+            )}
             <Modal
               title={`עריכת ${i.name}`}
               trigger={
-                <button className={iconBtn} aria-label={`עריכת ${i.name}`}>
+                <button className={`${iconBtn} text-black/55`} aria-label={`עריכת ${i.name}`}>
                   <Pencil size={15} />
                 </button>
               }
             >
               {(close) => <InspectorForm inspector={i} onDone={close} />}
             </Modal>
+            {i.employmentType !== "OWNER" && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm(`למחוק את הבודק "${i.name}" לצמיתות? אפשר למחוק רק בודק שאין לו בדיקות. התעריפים שלו יימחקו איתו.`)) {
+                    save(() => deleteInspector(i.id));
+                  }
+                }}
+                className={`${iconBtn} hover:bg-red-50 hover:text-red-600`}
+                aria-label={`מחיקת ${i.name}`}
+              >
+                <Trash2 size={15} />
+              </button>
+            )}
           </li>
         ))}
       </ul>

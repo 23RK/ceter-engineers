@@ -47,6 +47,36 @@ export async function saveInspector(
   return ok();
 }
 
+export async function setInspectorActive(inspectorId: string, active: boolean): Promise<ActionState> {
+  await requireUser();
+  await prisma.inspector.update({ where: { id: inspectorId }, data: { active } });
+  revalidate();
+  return ok();
+}
+
+/**
+ * Full delete - only for an inspector with no inspections (their rates go
+ * with them). Owners (רון / גיא) are only deactivated.
+ */
+export async function deleteInspector(inspectorId: string): Promise<ActionState> {
+  await requireUser();
+  const inspector = await prisma.inspector.findUnique({
+    where: { id: inspectorId },
+    select: { employmentType: true, _count: { select: { inspections: true } } },
+  });
+  if (!inspector) return { error: "הבודק לא נמצא" };
+  if (inspector.employmentType === "OWNER") {
+    return { error: "בעלים (רון / גיא) לא נמחקים. אפשר להשבית." };
+  }
+  const n = inspector._count.inspections;
+  if (n > 0) {
+    return { error: `לבודק יש ${n === 1 ? "בדיקה אחת" : `${n} בדיקות`}, ולכן אפשר רק להשבית אותו.` };
+  }
+  await prisma.inspector.delete({ where: { id: inspectorId } });
+  revalidate();
+  return ok();
+}
+
 // --- סוגי נכס ---------------------------------------------------------------
 
 export async function createApartmentType(name: string): Promise<ActionState> {

@@ -248,6 +248,7 @@ export default async function ProjectDetailPage({
         <ProjectFinance
           projectId={project.id}
           terms={feeTerms}
+          billing={{ feeBillingDay: project.feeBillingDay, feePaymentTermsDays: project.feePaymentTermsDays }}
           feeNotes={project.feeNotes}
           payments={project.payments}
           stages={project.milestones.map((m) => ({ id: m.id, title: m.title, status: m.status }))}

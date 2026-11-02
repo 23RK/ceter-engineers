@@ -85,15 +85,32 @@ test("alert: a payment tied to a done stage that isn't paid", () => {
 });
 
 test("retainer schedule: one payment a month, skipping months already scheduled", () => {
+  // Before the billing settings existed: billed on the start date's day, due at once.
   const rows = retainerSchedule(
     { feeMonthly: 4000, feeStartDate: "2026-01-31", feeEndDate: "2026-04-01" },
-    ["2026-02-10"]
+    ["ריטיינר 2/2026"]
   );
   assert.deepEqual(
-    rows.map((r) => r.dueDate.toISOString().slice(0, 10)),
-    ["2026-01-31", "2026-03-31", "2026-04-30"]
+    rows.map((r) => [r.title, r.dueDate.toISOString().slice(0, 10)]),
+    [
+      ["ריטיינר 1/2026", "2026-01-31"],
+      ["ריטיינר 3/2026", "2026-03-31"],
+      ["ריטיינר 4/2026", "2026-04-30"],
+    ]
   );
   assert.equal(rows[0].amount, 4000);
+});
+
+test("retainer billing day and payment terms (שוטף+30 / שוטף+60)", () => {
+  const base = { feeMonthly: 5000, feeStartDate: "2026-01-15", feeEndDate: "2026-03-01" };
+  const due = (o: object) =>
+    retainerSchedule({ ...base, ...o }, []).map((r) => r.dueDate.toISOString().slice(0, 10));
+  assert.deepEqual(due({ feeBillingDay: 1, feePaymentTermsDays: 0 }), ["2026-01-01", "2026-02-01", "2026-03-01"]);
+  assert.deepEqual(due({ feeBillingDay: 10 }), ["2026-01-10", "2026-02-10", "2026-03-10"]);
+  assert.deepEqual(due({ feeBillingDay: 0 }), ["2026-01-31", "2026-02-28", "2026-03-31"]);
+  // שוטף+30: end of the billed month + 30 days
+  assert.deepEqual(due({ feeBillingDay: 1, feePaymentTermsDays: 30 }), ["2026-03-02", "2026-03-30", "2026-04-30"]);
+  assert.deepEqual(due({ feeBillingDay: 10, feePaymentTermsDays: 60 }).at(0), "2026-04-01");
 });
 
 test("phone, WhatsApp and Waze links", () => {

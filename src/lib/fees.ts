@@ -116,29 +116,62 @@ export function paymentsDueForDoneStages<
   return payments.filter((p) => !p.paid && p.stageId && done.has(p.stageId));
 }
 
-/** One payment per month for a retainer - the months not scheduled yet. */
+/** יום הגבייה בחודש: 1 / 10 / 0 = סוף החודש. */
+export const BILLING_DAYS = [
+  { value: 1, label: "ב-1 לחודש" },
+  { value: 10, label: "ב-10 לחודש" },
+  { value: 0, label: "בסוף החודש" },
+] as const;
+
+/** תנאי תשלום: מיידי, או שוטף + X (סוף חודש החיוב + X ימים). */
+export const PAYMENT_TERMS = [
+  { value: 0, label: "מיידי (ביום החיוב)" },
+  { value: 30, label: "שוטף+30" },
+  { value: 60, label: "שוטף+60" },
+] as const;
+
+export type RetainerTerms = Pick<FeeTerms, "feeMonthly" | "feeStartDate" | "feeEndDate"> & {
+  /** null = the start date's day (as before these settings existed). */
+  feeBillingDay?: number | null;
+  feePaymentTermsDays?: number | null;
+};
+
+const lastDayOf = (y: number, m: number) => new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+
+/**
+ * One payment per month of the period (start month to end month, both in).
+ * Each month is billed on the billing day; it's due then (מיידי), or at the
+ * end of that month plus 30 / 60 days (שוטף+30 / שוטף+60). Months that already
+ * have their retainer payment (same title) are skipped.
+ */
 export function retainerSchedule(
-  terms: Pick<FeeTerms, "feeMonthly" | "feeStartDate" | "feeEndDate">,
-  existingDueDates: (Date | string | null)[]
+  terms: RetainerTerms,
+  existingTitles: (string | null)[]
 ): { amount: number; dueDate: Date; title: string }[] {
   if (terms.feeMonthly == null || !terms.feeStartDate || !terms.feeEndDate) return [];
   const start = new Date(terms.feeStartDate);
   const months = retainerMonths(start, terms.feeEndDate);
-  const key = (d: Date) => `${d.getUTCFullYear()}-${d.getUTCMonth()}`;
-  const have = new Set(existingDueDates.filter(Boolean).map((d) => key(new Date(d!))));
+  const have = new Set(existingTitles.filter(Boolean));
+  const termsDays = terms.feePaymentTermsDays ?? 0;
   const out: { amount: number; dueDate: Date; title: string }[] = [];
   for (let i = 0; i < months; i++) {
-    // Same day of month as the start date (clamped to the month's last day).
     const y = start.getUTCFullYear();
     const m = start.getUTCMonth() + i;
-    const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-    const due = new Date(Date.UTC(y, m, Math.min(start.getUTCDate(), lastDay)));
-    if (have.has(key(due))) continue;
-    out.push({
-      amount: terms.feeMonthly,
-      dueDate: due,
-      title: `ריטיינר ${due.getUTCMonth() + 1}/${due.getUTCFullYear()}`,
-    });
+    const last = lastDayOf(y, m);
+    const day =
+      terms.feeBillingDay == null
+        ? Math.min(start.getUTCDate(), last)
+        : terms.feeBillingDay === 0
+          ? last
+          : Math.min(terms.feeBillingDay, last);
+    const billed = new Date(Date.UTC(y, m, day));
+    const title = `ריטיינר ${billed.getUTCMonth() + 1}/${billed.getUTCFullYear()}`;
+    if (have.has(title)) continue;
+    const dueDate =
+      termsDays > 0
+        ? new Date(Date.UTC(y, m, last) + termsDays * 24 * 60 * 60 * 1000) // שוטף + X
+        : billed;
+    out.push({ amount: terms.feeMonthly, dueDate, title });
   }
   return out;
 }

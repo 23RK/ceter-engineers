@@ -179,6 +179,10 @@ model Project {
   feeMonthly          Float? // RETAINER: סכום לחודש
   feeStartDate        DateTime? // RETAINER: תאריך התחלה
   feeEndDate          DateTime? // RETAINER: תאריך סיום
+  // RETAINER: יום הגבייה בחודש (1 / 10 / 0 = סוף החודש; empty = the start date's day)
+  feeBillingDay       Int?
+  // RETAINER: תנאי תשלום - 0 מיידי, 30 / 60 = שוטף+30 / שוטף+60 (empty = מיידי)
+  feePaymentTermsDays Int?
   feePercent          Float? // PERCENTAGE: אחוז
   feeConstructionCost Float? // PERCENTAGE: עלות בנייה משוערת
   feeNotes            String?

@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useOptimistic, useState, useTransition } from "react";
+import { useEffect, useMemo, useOptimistic, useState, useSyncExternalStore, useTransition } from "react";
 import {
   AlertTriangle,
   ChevronDown,
   CircleDollarSign,
+  Columns3,
   Download,
   FileCheck2,
   MessageCircle,
@@ -108,6 +109,7 @@ export function InspectionsBoard({
     Object.entries(initialFilters).some(([k, v]) => v && k !== "preset" && k !== "q")
   );
   const update = (p: Partial<InspectionFilters>) => setFilters((f) => ({ ...f, ...p }));
+  const { hidden, toggle } = useHiddenColumns();
   useEffect(() => writeUrl(filters), [filters]);
 
   const run: Run = (id, patch) => {
@@ -228,6 +230,7 @@ export function InspectionsBoard({
           <Download size={15} />
           ייצוא לאקסל
         </button>
+        <ColumnsPicker hidden={hidden} toggle={toggle} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -355,6 +358,7 @@ export function InspectionsBoard({
             summary={summarize(g.rows.map((r) => ({ ...r, isOwner: isOwner(r.inspectorId) })))}
             setup={setup}
             run={run}
+            hidden={hidden}
           />
         ))
       )}
@@ -373,6 +377,109 @@ export function InspectionsBoard({
   );
 }
 
+// --- Table columns (SPEC §4.3) ----------------------------------------------
+// Date, client and status stay put on the right; actions on the left; the
+// rest scrolls between them. Secondary columns can be hidden ("הצג עמודות").
+
+const COLUMNS = [
+  { key: "date", label: "תאריך" },
+  { key: "client", label: "לקוח" },
+  { key: "status", label: "סטטוס" },
+  { key: "inspector", label: "בודק" },
+  { key: "time", label: "שעה", optional: true },
+  { key: "address", label: "כתובת" },
+  { key: "city", label: "עיר", optional: true },
+  { key: "phone", label: "טלפון", optional: true },
+  { key: "apartment", label: "דירה", optional: true },
+  { key: "type", label: "סוג נכס" },
+  { key: "units", label: "כמות", optional: true },
+  { key: "developer", label: "יזם/קבלן", optional: true },
+  { key: "price", label: "מחיר" },
+  { key: "payment", label: "תשלום" },
+  { key: "method", label: "אמצעי תשלום", optional: true },
+  { key: "report", label: "דוח" },
+  { key: "pay", label: "לבודק", optional: true },
+  { key: "notes", label: "הערות", optional: true },
+  { key: "actions", label: "פעולות" },
+] as const;
+
+type ColumnKey = (typeof COLUMNS)[number]["key"];
+const DEFAULT_HIDDEN: ColumnKey[] = ["method", "notes"];
+
+/** Sticky columns: right edge (RTL start) and left edge, with fixed widths. */
+const STICKY: Partial<Record<ColumnKey, string>> = {
+  date: "sticky right-0 z-10 w-[10rem] min-w-[10rem]",
+  client: "sticky right-[10rem] z-10 w-[10.25rem] min-w-[10.25rem]",
+  status: "sticky right-[20.25rem] z-10 w-[8.5rem] min-w-[8.5rem] border-l border-l-black/10",
+  actions: "sticky left-0 z-10 border-r border-r-black/10",
+};
+
+const visibleColumns = (hidden: Set<ColumnKey>) => COLUMNS.filter((c) => !hidden.has(c.key));
+
+const HIDDEN_KEY = "keter.inspections.hiddenColumns";
+const listeners = new Set<() => void>();
+function readHidden(): string {
+  try {
+    return localStorage.getItem(HIDDEN_KEY) ?? DEFAULT_HIDDEN.join(",");
+  } catch {
+    return DEFAULT_HIDDEN.join(",");
+  }
+}
+/** The viewer's hidden columns, remembered in this browser only. */
+function useHiddenColumns() {
+  const raw = useSyncExternalStore(
+    (cb) => {
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
+    readHidden,
+    () => DEFAULT_HIDDEN.join(",")
+  );
+  const hidden = useMemo(
+    () => new Set(raw.split(",").filter((k): k is ColumnKey => COLUMNS.some((c) => c.key === k && "optional" in c))),
+    [raw]
+  );
+  const toggle = (key: ColumnKey) => {
+    const next = new Set(hidden);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    try {
+      localStorage.setItem(HIDDEN_KEY, [...next].join(","));
+    } catch {
+      // private mode: just this page view
+    }
+    listeners.forEach((l) => l());
+  };
+  return { hidden, toggle };
+}
+
+function ColumnsPicker({ hidden, toggle }: { hidden: Set<ColumnKey>; toggle: (k: ColumnKey) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative hidden lg:block">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex min-h-10 items-center gap-1.5 rounded-lg border border-black/10 bg-white px-3 text-sm font-medium text-black/60 shadow-sm hover:bg-black/5"
+      >
+        <Columns3 size={15} />
+        הצג עמודות
+      </button>
+      {open && (
+        <div className="absolute top-11 left-0 z-30 w-52 rounded-xl border border-black/5 bg-white p-2 shadow-xl">
+          {COLUMNS.filter((c) => "optional" in c).map((c) => (
+            <label key={c.key} className="flex min-h-9 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm text-brand-900 hover:bg-black/[0.03]">
+              <input type="checkbox" checked={!hidden.has(c.key)} onChange={() => toggle(c.key)} className="accent-brand-600" />
+              {c.label}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MonthGroup({
   label,
   defaultOpen,
@@ -380,6 +487,7 @@ function MonthGroup({
   summary,
   setup,
   run,
+  hidden,
 }: {
   label: string;
   defaultOpen: boolean;
@@ -387,6 +495,7 @@ function MonthGroup({
   summary: ReturnType<typeof summarize>;
   setup: BoardSetup;
   run: Run;
+  hidden: Set<ColumnKey>;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [prevDefault, setPrevDefault] = useState(defaultOpen);
@@ -432,19 +541,19 @@ function MonthGroup({
         <>
           {/* Wide screens: the table */}
           <div className="hidden overflow-x-auto lg:block">
-            <table className="w-max min-w-full text-sm">
+            <table className="w-max min-w-full border-separate border-spacing-0 text-sm">
               <thead className="text-xs text-black/45">
-                <tr className="border-b border-black/5">
-                  {["תאריך", "שעה", "בודק", "סטטוס", "לקוח", "טלפון", "עיר", "כתובת", "דירה", "סוג נכס", "כמות", "יזם/קבלן", "מחיר", "תשלום", "אמצעי", "דוח", "לבודק", "הערות", ""].map((h, i) => (
-                    <th key={i} className={`px-1.5 py-2 text-right font-medium whitespace-nowrap ${i === 0 ? "sticky right-0 z-10 bg-white" : ""}`}>
-                      {h}
+                <tr>
+                  {visibleColumns(hidden).map((c) => (
+                    <th key={c.key} scope="col" className={`border-b border-black/5 bg-white px-1.5 py-2 text-right font-medium whitespace-nowrap ${STICKY[c.key] ?? ""}`}>
+                      {c.label}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-black/5">
+              <tbody>
                 {rows.map((r) => (
-                  <TableRow key={r.id} row={r} setup={setup} run={run} />
+                  <TableRow key={r.id} row={r} setup={setup} run={run} hidden={hidden} />
                 ))}
               </tbody>
             </table>
@@ -577,28 +686,42 @@ function RowActions({ row, setup, run }: { row: InspectionRow; setup: BoardSetup
   );
 }
 
-function TableRow({ row, setup, run }: { row: InspectionRow; setup: BoardSetup; run: Run }) {
+function TableRow({ row, setup, run, hidden }: { row: InspectionRow; setup: BoardSetup; run: Run; hidden: Set<ColumnKey> }) {
   const set = (patch: InspectionPatch) => run(row.id, patch);
   const inspector = setup.inspectors.find((i) => i.id === row.inspectorId);
   const canceled = row.status === "CANCELED";
-  return (
-    <tr className={`group align-middle ${canceled ? "opacity-50" : ""} hover:bg-brand-50/30`}>
-      <td className="sticky right-0 z-10 bg-white px-1.5 py-1 group-hover:bg-brand-50">
+  const td = (key: ColumnKey, children: React.ReactNode, title?: string) => (
+    <td key={key} title={title} className={`border-b border-black/5 bg-white px-1 py-1 group-hover:bg-brand-50 ${STICKY[key] ?? ""}`}>
+      {children}
+    </td>
+  );
+  const cells: Record<ColumnKey, () => React.ReactNode> = {
+    date: () =>
+      td(
+        "date",
         <div className="flex items-center gap-1">
           <input
             type="date"
             value={toDateInputValue(row.date)}
             onChange={(e) => set({ date: e.target.value || null })}
             aria-label="תאריך"
-            className="min-h-9 w-[8.2rem] rounded-md border border-transparent bg-transparent px-1 text-sm outline-none hover:bg-black/[0.04] focus:border-brand-400"
+            className="min-h-9 w-[7.6rem] rounded-md border border-transparent bg-transparent px-1 text-sm outline-none hover:bg-black/[0.04] focus:border-brand-400"
           />
-          <span className="w-10 text-xs text-black/45">{row.date ? dayName(row.date) : ""}</span>
+          <span className="w-9 text-xs text-black/45">{row.date ? dayName(row.date) : ""}</span>
         </div>
-      </td>
-      <td className="px-1 py-1">
-        <TextCell value={row.time} onSave={(v) => set({ time: v })} label="שעה" type="time" className="w-[6.2rem]" />
-      </td>
-      <td className="px-1 py-1">
+      ),
+    client: () =>
+      td(
+        "client",
+        <div className="w-[9.5rem]">
+          <TextCell value={row.clientName} onSave={(v) => v && set({ clientName: v })} label="לקוח" className="font-semibold" />
+          {row.kind === "REPEAT" && <span className="block px-1.5 text-[10px] font-semibold text-amber-700">חוזרת</span>}
+        </div>
+      ),
+    status: () => td("status", <StatusSelect row={row} run={run} />),
+    inspector: () =>
+      td(
+        "inspector",
         <div className="flex items-center gap-1">
           <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: inspector?.color ?? "#cbd5e1" }} />
           <SelectCell
@@ -610,15 +733,13 @@ function TableRow({ row, setup, run }: { row: InspectionRow; setup: BoardSetup; 
             className="w-28"
           />
         </div>
-      </td>
-      <td className="px-1 py-1">
-        <StatusSelect row={row} run={run} />
-      </td>
-      <td className="px-1 py-1">
-        <TextCell value={row.clientName} onSave={(v) => v && set({ clientName: v })} label="לקוח" className="w-36 font-semibold" />
-        {row.kind === "REPEAT" && <span className="mr-1.5 text-[10px] font-semibold text-amber-700">חוזרת</span>}
-      </td>
-      <td className="px-1 py-1">
+      ),
+    time: () => td("time", <TextCell value={row.time} onSave={(v) => set({ time: v })} label="שעה" type="time" className="w-[6.2rem]" />),
+    address: () => td("address", <TextCell value={row.address} onSave={(v) => set({ address: v })} label="כתובת" className="w-40" />),
+    city: () => td("city", <TextCell value={row.city} onSave={(v) => set({ city: v })} label="עיר" className="w-24" />),
+    phone: () =>
+      td(
+        "phone",
         <div className="flex items-center">
           <TextCell value={row.clientPhone} onSave={(v) => set({ clientPhone: v })} label="טלפון" dir="ltr" type="tel" className="w-28" />
           {telHref(row.clientPhone) && (
@@ -627,17 +748,11 @@ function TableRow({ row, setup, run }: { row: InspectionRow; setup: BoardSetup; 
             </a>
           )}
         </div>
-      </td>
-      <td className="px-1 py-1">
-        <TextCell value={row.city} onSave={(v) => set({ city: v })} label="עיר" className="w-24" />
-      </td>
-      <td className="px-1 py-1">
-        <TextCell value={row.address} onSave={(v) => set({ address: v })} label="כתובת" className="w-36" />
-      </td>
-      <td className="px-1 py-1">
-        <TextCell value={row.apartmentNumber} onSave={(v) => set({ apartmentNumber: v })} label="דירה" className="w-14" />
-      </td>
-      <td className="px-1 py-1">
+      ),
+    apartment: () => td("apartment", <TextCell value={row.apartmentNumber} onSave={(v) => set({ apartmentNumber: v })} label="דירה" className="w-14" />),
+    type: () =>
+      td(
+        "type",
         <SelectCell
           value={row.apartmentTypeId}
           options={setup.apartmentTypes.filter((t) => t.active || t.id === row.apartmentTypeId).map((t) => ({ value: t.id, label: t.name }))}
@@ -646,41 +761,39 @@ function TableRow({ row, setup, run }: { row: InspectionRow; setup: BoardSetup; 
           empty="—"
           className="w-28"
         />
-      </td>
-      <td className="px-1 py-1">
-        <NumberCell value={row.unitsCount} onSave={(v) => set({ unitsCount: v ?? 1 })} label="כמות" min={1} integer className="w-12" />
-      </td>
-      <td className="px-1 py-1">
-        <TextCell value={row.developerContractor} onSave={(v) => set({ developerContractor: v })} label="יזם / קבלן" list="developers-board" className="w-32" />
-      </td>
-      <td className="px-1 py-1" title={row.price != null ? `${formatMoney(withVat(row.price, setup.vatRate))} כולל מע"מ` : undefined}>
-        <NumberCell value={row.price} onSave={(v) => set({ price: v })} label='מחיר ללא מע"מ' className="w-20 font-semibold" />
-      </td>
-      <td className="px-1 py-1">
-        <PaymentCell row={row} run={run} />
-      </td>
-      <td className="px-1 py-1">
-        <SelectCell value={row.paymentMethod} options={PAYMENT_METHODS} onSave={(v) => set({ paymentMethod: v })} label="אמצעי תשלום" empty="—" className="w-24 text-xs" />
-      </td>
-      <td className="px-1 py-1">
-        <CheckCell checked={row.reportSent} onSave={(v) => set({ reportSent: v })} label="דוח נשלח" text={row.reportSent ? formatDateShort(row.reportSentAt) ?? "נשלח" : "לא"} tone="purple" />
-      </td>
-      <td className="px-1 py-1">
-        {inspector?.employmentType === "OWNER" ? (
+      ),
+    units: () => td("units", <NumberCell value={row.unitsCount} onSave={(v) => set({ unitsCount: v ?? 1 })} label="כמות" min={1} integer className="w-12" />),
+    developer: () =>
+      td("developer", <TextCell value={row.developerContractor} onSave={(v) => set({ developerContractor: v })} label="יזם / קבלן" list="developers-board" className="w-32" />),
+    price: () =>
+      td(
+        "price",
+        <NumberCell value={row.price} onSave={(v) => set({ price: v })} label='מחיר ללא מע"מ' className="w-20 font-semibold" />,
+        row.price != null ? `${formatMoney(withVat(row.price, setup.vatRate))} כולל מע"מ` : undefined
+      ),
+    payment: () => td("payment", <PaymentCell row={row} run={run} />),
+    method: () =>
+      td("method", <SelectCell value={row.paymentMethod} options={PAYMENT_METHODS} onSave={(v) => set({ paymentMethod: v })} label="אמצעי תשלום" empty="—" className="w-24 text-xs" />),
+    report: () =>
+      td("report", <CheckCell checked={row.reportSent} onSave={(v) => set({ reportSent: v })} label="דוח נשלח" text={row.reportSent ? formatDateShort(row.reportSentAt) ?? "נשלח" : "לא"} tone="purple" />),
+    pay: () =>
+      td(
+        "pay",
+        inspector?.employmentType === "OWNER" ? (
           <span className="px-1.5 text-xs text-black/35">בעלים</span>
         ) : (
           <div className="flex items-center gap-0.5">
             <NumberCell value={row.inspectorPay} onSave={(v) => set({ inspectorPay: v })} label="תשלום לבודק" className="w-16" />
             <CheckCell checked={row.inspectorPaid} onSave={(v) => set({ inspectorPaid: v })} label="שולם לבודק" text={row.inspectorPaid ? "שולם" : ""} tone="green" />
           </div>
-        )}
-      </td>
-      <td className="px-1 py-1">
-        <TextCell value={row.notes} onSave={(v) => set({ notes: v })} label="הערות" className="w-40" />
-      </td>
-      <td className="px-1 py-1">
-        <RowActions row={row} setup={setup} run={run} />
-      </td>
+        )
+      ),
+    notes: () => td("notes", <TextCell value={row.notes} onSave={(v) => set({ notes: v })} label="הערות" className="w-44" />),
+    actions: () => td("actions", <RowActions row={row} setup={setup} run={run} />),
+  };
+  return (
+    <tr className={`group align-middle ${canceled ? "opacity-50" : ""}`}>
+      {visibleColumns(hidden).map((c) => cells[c.key]())}
     </tr>
   );
 }

@@ -66,10 +66,10 @@ export default async function DepartmentPage({
       select: { id: true, name: true, color: true },
       orderBy: { name: "asc" },
     }),
+    // Both departments (tiny): the kanban uses this one's, the new-project form either.
     prisma.stageTemplate.findMany({
-      where: { department: department.value },
-      select: { title: true },
-      orderBy: { order: "asc" },
+      select: { department: true, title: true },
+      orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     }),
   ]);
 
@@ -120,7 +120,7 @@ export default async function DepartmentPage({
             {activeCount === 1 ? "פרויקט פעיל אחד" : `${activeCount} פרויקטים פעילים`}
           </p>
         </div>
-        <NewProjectButton department={department.value} users={users} />
+        <NewProjectButton department={department.value} users={users} templates={templates} />
       </div>
 
       <UnassignedProjectsBanner count={unassignedCount} />
@@ -129,7 +129,7 @@ export default async function DepartmentPage({
         key={department.value}
         rows={rows}
         users={users}
-        templateTitles={templates.map((t) => t.title)}
+        templateTitles={templates.filter((t) => t.department === department.value).map((t) => t.title)}
         initial={initial}
       />
     </div>

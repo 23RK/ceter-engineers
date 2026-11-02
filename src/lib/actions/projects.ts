@@ -67,9 +67,10 @@ export async function createProject(
   // A new project starts with its department's stage template (SPEC §3.3).
   const templates = await prisma.stageTemplate.findMany({
     where: { department },
-    orderBy: { order: "asc" },
+    orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     select: { title: true },
   });
+  const stageDue = formData.getAll("stageDue").map((v) => toOptionalDate(v));
 
   const project = await prisma.project.create({
     data: {
@@ -78,7 +79,8 @@ export async function createProject(
       ownerId: owner.ownerId,
       city: toOptionalString(formData.get("city")),
       milestones: {
-        create: templates.map((t, order) => ({ title: t.title, order })),
+        // Planned dates proposed by the form (spread evenly, editable), in template order.
+        create: templates.map((t, order) => ({ title: t.title, order, dueDate: stageDue[order] ?? null })),
       },
       client: toOptionalString(formData.get("client")),
       address: toOptionalString(formData.get("address")),
