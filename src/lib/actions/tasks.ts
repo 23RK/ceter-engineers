@@ -60,6 +60,7 @@ export async function createTask(
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
   revalidatePath("/projects");
+  revalidatePath("/departments/[slug]", "page");
   return { ok: true, ts: Date.now() };
 }
 
@@ -93,6 +94,7 @@ export async function updateTask(
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
   revalidatePath("/projects");
+  revalidatePath("/departments/[slug]", "page");
   return { ok: true, ts: Date.now() };
 }
 
@@ -102,6 +104,7 @@ export async function deleteTask(taskId: string) {
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
   revalidatePath("/projects");
+  revalidatePath("/departments/[slug]", "page");
 }
 
 export async function setTaskStatus(taskId: string, status: TaskStatus) {
@@ -124,4 +127,5 @@ export async function setTaskStatus(taskId: string, status: TaskStatus) {
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
   revalidatePath("/projects");
+  revalidatePath("/departments/[slug]", "page");
 }

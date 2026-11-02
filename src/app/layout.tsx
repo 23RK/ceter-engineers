@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Heebo } from "next/font/google";
 import "./globals.css";
 
@@ -11,6 +11,13 @@ const heebo = Heebo({
 export const metadata: Metadata = {
   title: "כתר הנדסה | ניהול פרויקטים",
   description: "מערכת ניהול משימות, פרויקטים ולוחות זמנים - כתר הנדסה",
+};
+
+// "cover" so the mobile bottom bar can pad itself for the iPhone home
+// indicator with env(safe-area-inset-bottom).
+export const viewport: Viewport = {
+  viewportFit: "cover",
+  themeColor: "#0b0b10",
 };
 
 export default function RootLayout({

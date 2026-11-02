@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { TasksClient } from "@/components/tasks/tasks-client";
 
 export default async function TasksPage() {
-  await requireUser();
+  const user = await requireUser();
 
   const [tasks, users, projects] = await Promise.all([
     prisma.task.findMany({
@@ -21,5 +21,12 @@ export default async function TasksPage() {
     }),
   ]);
 
-  return <TasksClient tasks={tasks} users={users} projects={projects} />;
+  return (
+    <TasksClient
+      tasks={tasks}
+      users={users}
+      projects={projects}
+      currentUserId={user.id}
+    />
+  );
 }

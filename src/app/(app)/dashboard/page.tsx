@@ -14,6 +14,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
+import { UnassignedProjectsBanner } from "@/components/projects/unassigned-banner";
 import { taskPriorityMeta, PROJECT_STATUSES } from "@/lib/constants";
 import {
   formatDate,
@@ -40,6 +41,7 @@ export default async function DashboardPage() {
     upcomingMeetings,
     openLeadsCount,
     urgentLeadTasks,
+    unassignedProjectsCount,
   ] = await Promise.all([
     prisma.task.count({ where: { status: { not: "DONE" } } }),
     prisma.task.count({
@@ -83,6 +85,7 @@ export default async function DashboardPage() {
       take: 4,
       include: { lead: { select: { id: true, name: true } } },
     }),
+    prisma.project.count({ where: { department: null } }),
   ]);
 
   const workloadByUser = users.map((u) => {
@@ -106,6 +109,8 @@ export default async function DashboardPage() {
           סיכום מצב הפרויקטים והמשימות של כתר הנדסה
         </p>
       </div>
+
+      <UnassignedProjectsBanner count={unassignedProjectsCount} />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard

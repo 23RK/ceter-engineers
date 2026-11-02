@@ -7,8 +7,9 @@ import {
   type ActionState,
 } from "@/lib/actions/projects";
 import { PROJECT_STATUSES } from "@/lib/constants";
+import { DEPARTMENTS } from "@/lib/departments";
 import { toDateInputValue } from "@/lib/format";
-import type { Project } from "@prisma/client";
+import type { Department, Project } from "@prisma/client";
 
 const initialState: ActionState = {};
 
@@ -17,11 +18,15 @@ const inputClass =
 
 export function ProjectForm({
   project,
+  defaultDepartment,
   onClose,
 }: {
   project?: Project;
+  /** Pre-selected when creating from a department screen. */
+  defaultDepartment?: Department;
   onClose: () => void;
 }) {
+  const selectedDepartment = project?.department ?? defaultDepartment;
   const action = project
     ? updateProject.bind(null, project.id)
     : createProject;
@@ -47,7 +52,31 @@ export function ProjectForm({
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <fieldset className="flex flex-col gap-1.5">
+        <legend className="mb-1.5 text-sm font-medium text-brand-900">
+          מחלקה
+        </legend>
+        <div className="grid grid-cols-2 gap-2">
+          {DEPARTMENTS.map((d) => (
+            <label
+              key={d.value}
+              className="flex min-h-11 cursor-pointer items-center justify-center rounded-lg border border-black/10 bg-white px-3 py-2 text-center text-sm font-medium text-black/60 shadow-sm transition has-[:checked]:border-brand-600 has-[:checked]:bg-brand-50 has-[:checked]:text-brand-700 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-500/30"
+            >
+              <input
+                type="radio"
+                name="department"
+                value={d.value}
+                defaultChecked={selectedDepartment === d.value}
+                required
+                className="sr-only"
+              />
+              {d.label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-brand-900">לקוח</label>
           <input
@@ -66,7 +95,7 @@ export function ProjectForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-brand-900">סטטוס</label>
           <select
@@ -97,7 +126,7 @@ export function ProjectForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-brand-900">
             תאריך התחלה
