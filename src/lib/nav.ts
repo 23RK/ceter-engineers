@@ -48,7 +48,7 @@ export const NAV_GROUPS: NavGroup[] = [
         short: "וילות",
         icon: House,
       },
-      { href: "/inspections", label: "בדק בית", icon: ClipboardCheck, soon: true },
+      { href: "/inspections", label: "בדק בית", icon: ClipboardCheck },
     ],
   },
   {

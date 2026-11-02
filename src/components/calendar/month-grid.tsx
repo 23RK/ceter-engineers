@@ -11,15 +11,29 @@ import {
 import { AddMeetingButton } from "@/components/calendar/add-meeting-button";
 import { MeetingChip } from "@/components/calendar/meeting-chip";
 import type { MeetingWithCreator } from "@/lib/types";
+import Link from "next/link";
+import { ClipboardCheck } from "lucide-react";
+
+/** A house inspection on the calendar, in its inspector's color (SPEC §4.3). */
+export type CalendarInspection = {
+  id: string;
+  date: Date;
+  time: string | null;
+  clientName: string;
+  city: string | null;
+  inspector: { name: string; color: string } | null;
+};
 
 const WEEKDAY_LABELS = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"];
 
 export function MonthGrid({
   monthDate,
   meetings,
+  inspections = [],
 }: {
   monthDate: Date;
   meetings: MeetingWithCreator[];
+  inspections?: CalendarInspection[];
 }) {
   const gridStart = startOfWeek(startOfMonth(monthDate), { weekStartsOn: 0 });
   const gridEnd = endOfWeek(endOfMonth(monthDate), { weekStartsOn: 0 });
@@ -31,6 +45,13 @@ export function MonthGrid({
     const list = meetingsByDay.get(key) ?? [];
     list.push(meeting);
     meetingsByDay.set(key, list);
+  }
+
+  // Inspection dates are date-only (UTC midnight).
+  const inspectionsByDay = new Map<string, CalendarInspection[]>();
+  for (const ins of inspections) {
+    const key = new Date(ins.date).toISOString().slice(0, 10);
+    inspectionsByDay.set(key, [...(inspectionsByDay.get(key) ?? []), ins]);
   }
 
   return (
@@ -87,6 +108,28 @@ export function MonthGrid({
                 {dayMeetings.map((meeting) => (
                   <MeetingChip key={meeting.id} meeting={meeting} />
                 ))}
+                {(inspectionsByDay.get(key) ?? [])
+                  .sort((a, b) => (a.time ?? "99").localeCompare(b.time ?? "99"))
+                  .map((ins) => {
+                    const color = ins.inspector?.color ?? "#94a3b8";
+                    return (
+                      <Link
+                        key={ins.id}
+                        href={`/inspections?month=${key.slice(0, 7)}&q=${encodeURIComponent(ins.clientName)}`}
+                        title={`בדק בית: ${ins.clientName}${ins.city ? `, ${ins.city}` : ""}${ins.inspector ? ` · ${ins.inspector.name}` : ""}`}
+                        className="flex w-full items-center gap-1 rounded-md border-r-[3px] bg-black/[0.03] px-1.5 py-1 text-right text-xs text-brand-900 transition hover:bg-black/[0.06]"
+                        style={{ borderRightColor: color }}
+                      >
+                        <ClipboardCheck size={11} className="shrink-0" style={{ color }} />
+                        {ins.time && (
+                          <span className="shrink-0 font-medium" dir="ltr">
+                            {ins.time}
+                          </span>
+                        )}
+                        <span className="truncate">{ins.clientName}</span>
+                      </Link>
+                    );
+                  })}
               </div>
             </div>
           );

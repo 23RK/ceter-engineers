@@ -285,3 +285,279 @@ export function toCsv(rows: (string | number | null | undefined)[][]) {
   };
   return "﻿" + rows.map((r) => r.map(cell).join(",")).join("\r\n");
 }
+
+// ---------------------------------------------------------------------------
+// Editing an inspection. The same rules run on the server (saving) and in
+// the browser (showing the change at once), so the two always agree.
+
+export type InspectionRow = {
+  id: string;
+  date: Date | null;
+  time: string | null;
+  kind: InspectionKind;
+  unitsCount: number;
+  status: InspectionStatus;
+  clientName: string;
+  clientPhone: string | null;
+  clientEmail: string | null;
+  city: string | null;
+  address: string | null;
+  apartmentNumber: string | null;
+  developerContractor: string | null;
+  price: number | null;
+  paymentStatus: InspectionPaymentStatus;
+  amountPaid: number;
+  paymentMethod: PaymentMethod | null;
+  paidAt: Date | null;
+  reportSent: boolean;
+  reportSentAt: Date | null;
+  inspectorPay: number | null;
+  inspectorPaid: boolean;
+  inspectorPaidAt: Date | null;
+  notes: string | null;
+  inspectorId: string | null;
+  apartmentTypeId: string | null;
+  parentInspectionId: string | null;
+  createdAt: Date;
+};
+
+/** What can be edited; dates as "yyyy-mm-dd" (or null to clear). */
+export type InspectionPatch = Partial<{
+  date: string | null;
+  time: string | null;
+  kind: InspectionKind;
+  unitsCount: number;
+  status: InspectionStatus;
+  clientName: string;
+  clientPhone: string | null;
+  clientEmail: string | null;
+  city: string | null;
+  address: string | null;
+  apartmentNumber: string | null;
+  developerContractor: string | null;
+  price: number | null;
+  paymentStatus: InspectionPaymentStatus;
+  amountPaid: number;
+  paymentMethod: PaymentMethod | null;
+  paidAt: string | null;
+  reportSent: boolean;
+  inspectorPay: number | null;
+  inspectorPaid: boolean;
+  notes: string | null;
+  inspectorId: string | null;
+  apartmentTypeId: string | null;
+}>;
+
+export type PricingContext = {
+  rates: RateRow[];
+  tiers: PriceTierRow[];
+  inspectors: { id: string; employmentType: EmploymentType }[];
+  /** Today, date-only (Israel). */
+  today: Date;
+};
+
+const TEXT_FIELDS = [
+  "time",
+  "clientPhone",
+  "clientEmail",
+  "city",
+  "address",
+  "apartmentNumber",
+  "developerContractor",
+  "notes",
+] as const;
+
+/**
+ * "תואם" means a date and an inspector are set: a waiting inspection that
+ * gets both becomes "תואם", and a scheduled one that loses either goes back
+ * to "ממתין לתיאום".
+ */
+export function scheduleStatus(status: InspectionStatus, date: unknown, inspectorId: unknown) {
+  const ready = !!date && !!inspectorId;
+  if (status === "PENDING_SCHEDULING" && ready) return "SCHEDULED";
+  if (status === "SCHEDULED" && !ready) return "PENDING_SCHEDULING";
+  return status;
+}
+
+/** Apply an edit, with the automatic rules (amounts, payment, status). */
+export function applyInspectionPatch<T extends InspectionRow>(
+  row: T,
+  patch: InspectionPatch,
+  ctx: PricingContext
+): T {
+  const next = { ...row };
+  const has = (k: keyof InspectionPatch) => k in patch;
+  const toDate = (v: string | null | undefined) => (v ? new Date(v) : null);
+
+  for (const k of TEXT_FIELDS) {
+    if (has(k)) next[k] = (patch[k] as string | null | undefined)?.trim() || null;
+  }
+  if (has("clientName") && patch.clientName?.trim()) next.clientName = patch.clientName.trim();
+  if (has("date")) next.date = toDate(patch.date);
+  if (has("kind") && patch.kind) next.kind = patch.kind;
+  if (has("unitsCount")) next.unitsCount = Math.max(1, Math.round(patch.unitsCount ?? 1));
+  if (has("inspectorId")) next.inspectorId = patch.inspectorId ?? null;
+  if (has("apartmentTypeId")) next.apartmentTypeId = patch.apartmentTypeId ?? null;
+  if (has("price")) next.price = patch.price ?? null;
+  if (has("inspectorPay")) next.inspectorPay = patch.inspectorPay ?? null;
+  if (has("paymentMethod")) next.paymentMethod = patch.paymentMethod ?? null;
+  if (has("paidAt")) next.paidAt = toDate(patch.paidAt);
+
+  // Amounts follow the job when it changes - unless already paid, or edited by hand.
+  const jobChanged = (["inspectorId", "apartmentTypeId", "unitsCount", "kind"] as const).some(
+    (k) => has(k) && patch[k] !== row[k]
+  );
+  if (jobChanged && !has("inspectorPay") && !row.inspectorPaid) {
+    const inspector = ctx.inspectors.find((i) => i.id === next.inspectorId) ?? null;
+    next.inspectorPay = inspectorPayFor(ctx.rates, inspector, next.apartmentTypeId, next.kind, next.unitsCount);
+  }
+  const priceChanged = (["apartmentTypeId", "unitsCount", "kind"] as const).some(
+    (k) => has(k) && patch[k] !== row[k]
+  );
+  if (priceChanged && !has("price") && row.paymentStatus === "UNPAID") {
+    const auto = clientPriceFor(ctx.tiers, next.apartmentTypeId, next.kind, next.unitsCount);
+    if (auto != null) next.price = auto;
+  }
+
+  if (has("inspectorPaid")) {
+    next.inspectorPaid = !!patch.inspectorPaid;
+    next.inspectorPaidAt = next.inspectorPaid ? (row.inspectorPaidAt ?? ctx.today) : null;
+  }
+  if (has("reportSent")) {
+    next.reportSent = !!patch.reportSent;
+    next.reportSentAt = next.reportSent ? (row.reportSentAt ?? ctx.today) : null;
+  }
+
+  // Payment: an explicit status wins; otherwise it follows the amounts.
+  if (has("paymentStatus") && patch.paymentStatus) {
+    next.paymentStatus = patch.paymentStatus;
+    if (patch.paymentStatus === "PAID") {
+      if (!has("amountPaid")) next.amountPaid = next.price ?? next.amountPaid;
+    } else if (patch.paymentStatus === "UNPAID") {
+      next.amountPaid = 0;
+      next.paidAt = null;
+    }
+  }
+  if (has("amountPaid")) next.amountPaid = Math.max(0, patch.amountPaid ?? 0);
+  if (!has("paymentStatus") && (has("amountPaid") || has("price"))) {
+    next.paymentStatus = derivePaymentStatus(next.price, next.amountPaid);
+  }
+  if (next.paymentStatus === "PAID" && !next.paidAt) next.paidAt = ctx.today;
+  if (next.paymentStatus === "UNPAID") next.paidAt = null;
+
+  // Status: set by hand, or by the automatic rules.
+  if (has("status") && patch.status) {
+    next.status = patch.status;
+  } else {
+    next.status = deriveStatus(
+      scheduleStatus(next.status, next.date, next.inspectorId),
+      next.reportSent,
+      next.paymentStatus
+    );
+    // An untouched report/payment shouldn't move a not-yet-done inspection forward.
+    if (!has("reportSent") && !has("paymentStatus") && !has("amountPaid") && !has("price")) {
+      next.status = scheduleStatus(row.status, next.date, next.inspectorId);
+    }
+  }
+  return next;
+}
+
+// ---------------------------------------------------------------------------
+// Board filters (SPEC §4.3)
+
+export type InspectionFilters = {
+  /** Ready-made filters: לא שולם / ממתין לדוח / השבוע / שלי. */
+  preset: "" | "unpaid" | "awaitingReport" | "thisWeek" | "mine";
+  month: string; // "yyyy-mm" or ""
+  from: string; // "yyyy-mm-dd" or ""
+  to: string;
+  inspectorId: string;
+  status: InspectionStatus | "";
+  payment: InspectionPaymentStatus | "";
+  report: "" | "sent" | "notSent";
+  developer: string;
+  city: string;
+  q: string;
+};
+
+export const EMPTY_FILTERS: InspectionFilters = {
+  preset: "",
+  month: "",
+  from: "",
+  to: "",
+  inspectorId: "",
+  status: "",
+  payment: "",
+  report: "",
+  developer: "",
+  city: "",
+  q: "",
+};
+
+/** Sunday to Saturday of today's week (date-only values). */
+export function weekRange(today: Date) {
+  const start = new Date(today.getTime() - today.getUTCDay() * DAY);
+  return { start, end: new Date(start.getTime() + 6 * DAY) };
+}
+
+const phoneDigits = (s: string) => s.replace(/\D/g, "");
+
+export function filterInspections<T extends InspectionRow>(
+  rows: T[],
+  f: InspectionFilters,
+  ctx: { today: Date; myInspectorId: string | null }
+) {
+  const q = f.q.trim().toLowerCase();
+  const qDigits = phoneDigits(q);
+  const week = weekRange(ctx.today);
+  const time = (d: Date | null) => (d ? new Date(d).getTime() : null);
+  return rows.filter((r) => {
+    const t = time(r.date);
+    switch (f.preset) {
+      case "unpaid":
+        if (!PERFORMED.includes(r.status) || r.paymentStatus === "PAID") return false;
+        break;
+      case "awaitingReport":
+        if (r.status !== "DONE" || r.reportSent) return false;
+        break;
+      case "thisWeek":
+        if (t == null || t < week.start.getTime() || t > week.end.getTime()) return false;
+        break;
+      case "mine":
+        if (!ctx.myInspectorId || r.inspectorId !== ctx.myInspectorId) return false;
+        break;
+    }
+    if (f.month && (!r.date || monthKey(r.date) !== f.month)) return false;
+    if (f.from && (t == null || t < new Date(f.from).getTime())) return false;
+    if (f.to && (t == null || t > new Date(f.to).getTime())) return false;
+    if (f.inspectorId && r.inspectorId !== f.inspectorId) return false;
+    if (f.status && r.status !== f.status) return false;
+    if (f.payment && r.paymentStatus !== f.payment) return false;
+    if (f.report === "sent" && !r.reportSent) return false;
+    if (f.report === "notSent" && r.reportSent) return false;
+    if (f.developer && (r.developerContractor ?? "").trim() !== f.developer) return false;
+    if (f.city && (r.city ?? "").trim() !== f.city) return false;
+    if (q) {
+      const text = [r.clientName, r.address, r.city, r.apartmentNumber].filter(Boolean).join(" ").toLowerCase();
+      const phoneHit = qDigits.length >= 3 && !!r.clientPhone && phoneDigits(r.clientPhone).includes(qDigits);
+      if (!text.includes(q) && !phoneHit) return false;
+    }
+    return true;
+  });
+}
+
+/** Month groups: undated first, then months newest first; rows by date and time. */
+export function groupByMonth<T extends InspectionRow>(rows: T[]) {
+  const groups = new Map<string, T[]>();
+  for (const r of rows) {
+    const key = r.date ? monthKey(r.date) : "none";
+    groups.set(key, [...(groups.get(key) ?? []), r]);
+  }
+  const sortRows = (a: T, b: T) =>
+    (a.date ? new Date(a.date).getTime() : 0) - (b.date ? new Date(b.date).getTime() : 0) ||
+    (a.time ?? "99").localeCompare(b.time ?? "99") ||
+    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  return [...groups.entries()]
+    .sort(([a], [b]) => (a === "none" ? -1 : b === "none" ? 1 : b.localeCompare(a)))
+    .map(([key, list]) => ({ key, rows: list.sort(sortRows) }));
+}

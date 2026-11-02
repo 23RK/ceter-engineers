@@ -123,3 +123,97 @@ test("small helpers", () => {
   assert.equal(shiftMonth("2026-01", -1), "2025-12");
   assert.equal(toCsv([["a,b", 'x"y', null]]), '﻿"a,b","x""y",');
 });
+
+import { applyInspectionPatch, type InspectionRow } from "./inspections";
+
+const ctx = {
+  rates,
+  tiers: [{ apartmentTypeId: "4", minUnits: 1, unitPrice: 1500 }],
+  inspectors: [liran, avi, ron],
+  today: new Date("2026-11-10"),
+};
+const base: InspectionRow = {
+  id: "i1",
+  date: null,
+  time: null,
+  kind: "REGULAR",
+  unitsCount: 1,
+  status: "PENDING_SCHEDULING",
+  clientName: "דנה",
+  clientPhone: null,
+  clientEmail: null,
+  city: null,
+  address: null,
+  apartmentNumber: null,
+  developerContractor: null,
+  price: null,
+  paymentStatus: "UNPAID",
+  amountPaid: 0,
+  paymentMethod: null,
+  paidAt: null,
+  reportSent: false,
+  reportSentAt: null,
+  inspectorPay: null,
+  inspectorPaid: false,
+  inspectorPaidAt: null,
+  notes: null,
+  inspectorId: null,
+  apartmentTypeId: null,
+  parentInspectionId: null,
+  createdAt: new Date("2026-11-01"),
+};
+
+test("edit: date + inspector schedule it, and the amounts fill in", () => {
+  const a = applyInspectionPatch(base, { date: "2026-11-12", inspectorId: "liran", apartmentTypeId: "4" }, ctx);
+  assert.equal(a.status, "SCHEDULED");
+  assert.equal(a.inspectorPay, 585);
+  assert.equal(a.price, 1500);
+  // Clearing the date sends it back to waiting.
+  assert.equal(applyInspectionPatch(a, { date: null }, ctx).status, "PENDING_SCHEDULING");
+});
+
+test("edit: report sent, then paid -> completed, with dates", () => {
+  const done = { ...base, status: "DONE" as const, price: 1500, inspectorId: "liran", date: new Date("2026-11-08") };
+  const sent = applyInspectionPatch(done, { reportSent: true }, ctx);
+  assert.equal(sent.status, "REPORT_SENT");
+  assert.equal(sent.reportSentAt?.toISOString().slice(0, 10), "2026-11-10");
+  const paid = applyInspectionPatch(sent, { paymentStatus: "PAID", paymentMethod: "BIT" }, ctx);
+  assert.equal(paid.status, "COMPLETED");
+  assert.equal(paid.amountPaid, 1500);
+  assert.equal(paid.paymentMethod, "BIT");
+  assert.equal(paid.paidAt?.toISOString().slice(0, 10), "2026-11-10");
+  // A partial payment: back to "דוח נשלח".
+  const partial = applyInspectionPatch(paid, { amountPaid: 500 }, ctx);
+  assert.equal(partial.paymentStatus, "PARTIAL");
+  assert.equal(partial.status, "REPORT_SENT");
+});
+
+test("edit: a paid inspector's pay and a paid price don't change with the job", () => {
+  const row = { ...base, inspectorId: "liran", inspectorPay: 600, inspectorPaid: true, price: 2000, paymentStatus: "PAID" as const, amountPaid: 2000 };
+  const next = applyInspectionPatch(row, { unitsCount: 3, apartmentTypeId: "4" }, ctx);
+  assert.equal(next.inspectorPay, 600);
+  assert.equal(next.price, 2000);
+  // Manual amounts win.
+  assert.equal(applyInspectionPatch(base, { inspectorId: "avi", inspectorPay: 999 }, ctx).inspectorPay, 999);
+});
+
+import { EMPTY_FILTERS, filterInspections, groupByMonth } from "./inspections";
+
+test("board filters: presets, search by name / phone / address, groups", () => {
+  const today = new Date("2026-11-10"); // Tuesday; week = Nov 8-14
+  const rows: InspectionRow[] = [
+    { ...base, id: "a", clientName: "דנה כהן", clientPhone: "050-1234567", date: new Date("2026-11-09"), status: "DONE", inspectorId: "liran" },
+    { ...base, id: "b", clientName: "יוסי", address: "הרצל 5", date: new Date("2026-10-20"), status: "REPORT_SENT", reportSent: true, paymentStatus: "PAID" },
+    { ...base, id: "c", clientName: "מיכל", date: null },
+  ];
+  const ids = (f: Partial<typeof EMPTY_FILTERS>, mine: string | null = null) =>
+    filterInspections(rows, { ...EMPTY_FILTERS, ...f }, { today, myInspectorId: mine }).map((r) => r.id);
+  assert.deepEqual(ids({ preset: "unpaid" }), ["a"]);
+  assert.deepEqual(ids({ preset: "awaitingReport" }), ["a"]);
+  assert.deepEqual(ids({ preset: "thisWeek" }), ["a"]);
+  assert.deepEqual(ids({ preset: "mine" }, "liran"), ["a"]);
+  assert.deepEqual(ids({ q: "1234567" }), ["a"]);
+  assert.deepEqual(ids({ q: "הרצל" }), ["b"]);
+  assert.deepEqual(ids({ month: "2026-10" }), ["b"]);
+  assert.deepEqual(groupByMonth(rows).map((g) => g.key), ["none", "2026-11", "2026-10"]);
+});

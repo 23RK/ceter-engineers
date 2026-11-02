@@ -43,6 +43,7 @@ export default async function DashboardPage() {
     openLeadsCount,
     urgentLeadTasks,
     unassignedProjectsCount,
+    monthInspections,
   ] = await Promise.all([
     // All open tasks (a small table): the lists, counts and workload come from it.
     prisma.task.findMany({
@@ -97,6 +98,14 @@ export default async function DashboardPage() {
       include: { lead: { select: { id: true, name: true } } },
     }),
     prisma.project.count({ where: { department: null } }),
+    // בדק בית this month (SPEC §3.6).
+    prisma.inspection.findMany({
+      where: {
+        status: { not: "CANCELED" },
+        date: { gte: monthRange(today).start, lt: nextMonth },
+      },
+      select: { status: true, reportSent: true },
+    }),
   ]);
 
   const isLate = (d: Date | null) => !!d && d.getTime() < today.getTime();
@@ -109,6 +118,7 @@ export default async function DashboardPage() {
     (t) => !t.project?.department && isLate(t.dueDate)
   ).length;
   const collection = expectedCollection(unpaidPayments, today);
+  const awaitingReport = monthInspections.filter((i) => i.status === "DONE" && !i.reportSent).length;
 
   const workloadByUser = users.map((u) => {
     const tasks = openTasks.filter((t) => t.assigneeId === u.id);
@@ -169,17 +179,27 @@ export default async function DashboardPage() {
             </div>
           </Link>
         ))}
-        <div className="flex flex-col gap-3 rounded-2xl border border-dashed border-black/10 bg-white/60 p-4">
-          <p className="flex items-center gap-2 text-sm font-bold text-black/45">
+        <Link
+          href={`/inspections?month=${today.toISOString().slice(0, 7)}`}
+          className="group flex flex-col gap-3 rounded-2xl border border-black/5 bg-white p-4 shadow-sm transition hover:shadow-md"
+        >
+          <p className="flex items-center gap-2 text-sm font-bold text-brand-900 group-hover:text-brand-600">
             <ClipboardCheck size={16} />
             בדק בית
-            <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-semibold">בקרוב</span>
           </p>
-          <div>
-            <p className="text-2xl font-bold text-black/30">—</p>
-            <p className="text-xs text-black/40">בדיקות החודש (שלב 3)</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <p className="text-2xl font-bold text-brand-900">{monthInspections.length}</p>
+              <p className="text-xs text-black/50">בדיקות החודש</p>
+            </div>
+            <div>
+              <p className={`text-2xl font-bold ${awaitingReport ? "text-amber-600" : "text-brand-900"}`}>
+                {awaitingReport}
+              </p>
+              <p className="text-xs text-black/50">ממתינות לדוח</p>
+            </div>
           </div>
-        </div>
+        </Link>
         <a
           href="#collection"
           className="flex flex-col gap-3 rounded-2xl border border-black/5 bg-white p-4 shadow-sm transition hover:shadow-md"

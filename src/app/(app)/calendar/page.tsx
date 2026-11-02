@@ -33,7 +33,7 @@ export default async function CalendarPage({
   const gridStart = startOfWeek(startOfMonth(monthDate), { weekStartsOn: 0 });
   const gridEnd = endOfWeek(endOfMonth(monthDate), { weekStartsOn: 0 });
 
-  const [meetings, partners] = await Promise.all([
+  const [meetings, partners, inspections] = await Promise.all([
     prisma.meeting.findMany({
       where: { startTime: { gte: gridStart, lte: gridEnd } },
       orderBy: { startTime: "asc" },
@@ -43,6 +43,24 @@ export default async function CalendarPage({
       where: { role: "PARTNER" },
       select: { id: true, name: true, color: true },
       orderBy: { name: "asc" },
+    }),
+    // בדק בית on the calendar, in each inspector's color (SPEC §4.3).
+    prisma.inspection.findMany({
+      where: {
+        status: { not: "CANCELED" },
+        date: {
+          gte: new Date(Date.UTC(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate())),
+          lte: new Date(Date.UTC(gridEnd.getFullYear(), gridEnd.getMonth(), gridEnd.getDate())),
+        },
+      },
+      select: {
+        id: true,
+        date: true,
+        time: true,
+        clientName: true,
+        city: true,
+        inspector: { select: { name: true, color: true } },
+      },
     }),
   ]);
 
@@ -62,7 +80,7 @@ export default async function CalendarPage({
         <div>
           <h1 className="text-xl font-bold text-brand-900">יומן פגישות</h1>
           <p className="text-sm text-black/50">
-            הפגישות המשותפות של שני השותפים
+            הפגישות המשותפות של שני השותפים, ובדיקות בדק בית בצבע הבודק
           </p>
         </div>
         <AddMeetingButton defaultStart={dayStart} defaultEnd={dayEnd} />
@@ -87,7 +105,11 @@ export default async function CalendarPage({
         </Link>
       </div>
 
-      <MonthGrid monthDate={monthDate} meetings={meetings} />
+      <MonthGrid
+        monthDate={monthDate}
+        meetings={meetings}
+        inspections={inspections.map((i) => ({ ...i, date: i.date! }))}
+      />
 
       <CalendarLegend partners={partners} />
 
