@@ -1,19 +1,21 @@
 import "server-only";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { encryptionKeyFrom, env } from "@/lib/google/env";
 
 // Encrypts secrets we have to store at rest (Google OAuth tokens) using
-// AES-256-GCM. TOKEN_ENCRYPTION_KEY must be a 32-byte key, hex-encoded
-// (64 hex chars) - generate one the same way SESSION_SECRET was.
+// AES-256-GCM. TOKEN_ENCRYPTION_KEY should be a 32-byte key, hex-encoded
+// (64 hex chars): `openssl rand -hex 32`. Surrounding quotes / spaces are
+// ignored; another 32+ character value is turned into a key with SHA-256.
+let warned = false;
 function getKey(): Buffer {
-  const hex = process.env.TOKEN_ENCRYPTION_KEY;
-  if (!hex) {
+  const value = env("TOKEN_ENCRYPTION_KEY");
+  if (!value) {
     throw new Error("Missing TOKEN_ENCRYPTION_KEY environment variable");
   }
-  const key = Buffer.from(hex, "hex");
-  if (key.length !== 32) {
-    throw new Error(
-      "TOKEN_ENCRYPTION_KEY must be a 32-byte key, hex-encoded (64 hex characters)"
-    );
+  const { key, derived } = encryptionKeyFrom(value);
+  if (derived && !warned) {
+    warned = true;
+    console.warn("[google] TOKEN_ENCRYPTION_KEY is not 64 hex characters - using a SHA-256-derived key. Replace it with `openssl rand -hex 32` before any token is stored.");
   }
   return key;
 }
