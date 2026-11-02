@@ -5,8 +5,10 @@ import { encrypt, decrypt } from "@/lib/crypto";
 import {
   CALENDAR_OAUTH_SCOPES,
   SYNCABLE_GOOGLE_ACCOUNTS,
+  ConnectStepError,
   type ConnectDeps,
 } from "@/lib/google/calendar-access";
+import { env, googleConfigIssues } from "@/lib/google/env";
 
 // Google OAuth is used ONLY to connect a partner's own calendar (from
 // Settings) - signing in to the app is email + password.
@@ -19,19 +21,24 @@ const REQUIRED_ENV = [
 ] as const;
 
 export function isGoogleConfigured() {
-  return REQUIRED_ENV.every((name) => Boolean(process.env[name]));
+  return REQUIRED_ENV.every((name) => Boolean(env(name)));
+}
+
+/** Settings problems that stop the connection from working (names only). */
+export function blockingConfigIssues() {
+  return googleConfigIssues().filter((i) => i.blocking);
 }
 
 function getAppUrl() {
-  const url = process.env.APP_URL;
+  const url = env("APP_URL");
   if (!url) throw new Error("Missing APP_URL environment variable");
   return url.replace(/\/$/, "");
 }
 
 function createOAuthClient() {
   return new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
+    env("GOOGLE_CLIENT_ID"),
+    env("GOOGLE_CLIENT_SECRET"),
     `${getAppUrl()}/api/google/callback`
   );
 }
@@ -56,16 +63,28 @@ export function getCalendarAuthUrl({ state, email }: { state: string; email: str
 export const calendarConnectDeps: ConnectDeps = {
   async exchangeCode(code) {
     const client = createOAuthClient();
-    const { tokens } = await client.getToken(code);
-    if (!tokens.id_token) throw new Error("Google did not return an ID token");
+    let tokens;
+    try {
+      ({ tokens } = await client.getToken(code));
+    } catch (e) {
+      throw new ConnectStepError("token_exchange", e);
+    }
+    if (!tokens.id_token) {
+      throw new ConnectStepError("id_token", new Error("Google did not return an ID token"));
+    }
 
     // Verifies the ID token's signature, issuer, expiry and audience - the
     // email we check comes from Google, not from anything the browser sent.
-    const ticket = await client.verifyIdToken({
-      idToken: tokens.id_token,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
-    const payload = ticket.getPayload();
+    let payload;
+    try {
+      const ticket = await client.verifyIdToken({
+        idToken: tokens.id_token,
+        audience: env("GOOGLE_CLIENT_ID"),
+      });
+      payload = ticket.getPayload();
+    } catch (e) {
+      throw new ConnectStepError("id_token", e);
+    }
 
     return {
       googleEmail: payload?.email,
@@ -78,19 +97,31 @@ export const calendarConnectDeps: ConnectDeps = {
   },
 
   async saveTokens(userId, googleEmail, tokens) {
+    let encryptedAccessToken: string;
+    let encryptedRefreshToken: string;
+    try {
+      encryptedAccessToken = encrypt(tokens.accessToken);
+      encryptedRefreshToken = encrypt(tokens.refreshToken);
+    } catch (e) {
+      throw new ConnectStepError("encrypt", e);
+    }
     const data = {
       googleEmail,
-      encryptedAccessToken: encrypt(tokens.accessToken),
-      encryptedRefreshToken: encrypt(tokens.refreshToken),
+      encryptedAccessToken,
+      encryptedRefreshToken,
       accessTokenExpiresAt: new Date(tokens.expiryDate ?? Date.now() + 3600_000),
       calendarId: "primary",
       lastSyncedAt: null,
     };
-    await prisma.googleAccount.upsert({
-      where: { userId },
-      create: { userId, ...data },
-      update: data,
-    });
+    try {
+      await prisma.googleAccount.upsert({
+        where: { userId },
+        create: { userId, ...data },
+        update: data,
+      });
+    } catch (e) {
+      throw new ConnectStepError("database", e);
+    }
   },
 
   async revokeToken(token) {
