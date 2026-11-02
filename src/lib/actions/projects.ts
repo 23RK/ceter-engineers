@@ -27,6 +27,21 @@ function revalidateProjectLists() {
   revalidatePath("/dashboard");
 }
 
+/** The owner (אחראי) must be one of the partners; empty means no owner. */
+async function parseOwnerId(
+  value: FormDataEntryValue | null
+): Promise<{ ownerId: string | null; error?: string }> {
+  const id = String(value ?? "").trim();
+  if (!id) return { ownerId: null };
+  const owner = await prisma.user.findFirst({
+    where: { id, role: "PARTNER" },
+    select: { id: true },
+  });
+  return owner
+    ? { ownerId: owner.id }
+    : { ownerId: null, error: "אחראי לא חוקי" };
+}
+
 function toOptionalFloat(value: FormDataEntryValue | null) {
   const str = String(value ?? "").trim();
   if (!str) return null;
@@ -46,10 +61,25 @@ export async function createProject(
   const department = formData.get("department");
   if (!isDepartment(department)) return { error: "יש לבחור מחלקה" };
 
+  const owner = await parseOwnerId(formData.get("ownerId"));
+  if (owner.error) return { error: owner.error };
+
+  // A new project starts with its department's stage template (SPEC §3.3).
+  const templates = await prisma.stageTemplate.findMany({
+    where: { department },
+    orderBy: { order: "asc" },
+    select: { title: true },
+  });
+
   const project = await prisma.project.create({
     data: {
       name,
       department,
+      ownerId: owner.ownerId,
+      city: toOptionalString(formData.get("city")),
+      milestones: {
+        create: templates.map((t, order) => ({ title: t.title, order })),
+      },
       client: toOptionalString(formData.get("client")),
       address: toOptionalString(formData.get("address")),
       status: (formData.get("status") as ProjectStatus) || "PLANNING",
@@ -98,11 +128,16 @@ export async function updateProject(
   }
   const department = isDepartment(departmentValue) ? departmentValue : null;
 
+  const owner = await parseOwnerId(formData.get("ownerId"));
+  if (owner.error) return { error: owner.error };
+
   await prisma.project.update({
     where: { id: projectId },
     data: {
       name,
       department,
+      ownerId: owner.ownerId,
+      city: toOptionalString(formData.get("city")),
       client: toOptionalString(formData.get("client")),
       address: toOptionalString(formData.get("address")),
       status,
@@ -181,46 +216,4 @@ export async function deleteProject(projectId: string) {
   });
   revalidateProjectLists();
   redirect(departmentHref(project.department));
-}
-
-export async function createMilestone(
-  projectId: string,
-  _prev: ActionState,
-  formData: FormData
-): Promise<ActionState> {
-  await requireUser();
-
-  const title = String(formData.get("title") ?? "").trim();
-  if (!title) return { error: "יש להזין כותרת לאבן דרך" };
-
-  const count = await prisma.milestone.count({ where: { projectId } });
-
-  await prisma.milestone.create({
-    data: {
-      title,
-      dueDate: toOptionalDate(formData.get("dueDate")),
-      projectId,
-      order: count,
-    },
-  });
-
-  revalidatePath(`/projects/${projectId}`);
-  return { ok: true, ts: Date.now() };
-}
-
-export async function toggleMilestone(milestoneId: string, done: boolean) {
-  await requireUser();
-  const milestone = await prisma.milestone.update({
-    where: { id: milestoneId },
-    data: { done },
-  });
-  revalidatePath(`/projects/${milestone.projectId}`);
-}
-
-export async function deleteMilestone(milestoneId: string) {
-  await requireUser();
-  const milestone = await prisma.milestone.delete({
-    where: { id: milestoneId },
-  });
-  revalidatePath(`/projects/${milestone.projectId}`);
 }

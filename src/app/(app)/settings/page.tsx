@@ -1,4 +1,12 @@
-import { CalendarDays, CircleAlert, CircleCheck, KeyRound } from "lucide-react";
+import Link from "next/link";
+import {
+  CalendarDays,
+  ChevronLeft,
+  CircleAlert,
+  CircleCheck,
+  KeyRound,
+  LayoutList,
+} from "lucide-react";
 import { ROLE_LABELS, requireUser } from "@/lib/auth";
 import { getCalendarConnection, isGoogleConfigured } from "@/lib/google/oauth";
 import { SYNCABLE_GOOGLE_ACCOUNTS } from "@/lib/google/calendar-access";
@@ -77,6 +85,24 @@ export default async function SettingsPage({
           </span>
         </div>
       </section>
+
+      <Link
+        href="/settings/stages"
+        className="flex max-w-lg items-center gap-3 rounded-2xl border border-black/5 bg-white p-5 shadow-sm transition hover:border-brand-200 hover:shadow-md"
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+          <LayoutList size={18} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold text-brand-900">
+            תבניות שלבים
+          </span>
+          <span className="block text-xs text-black/50">
+            השלבים שפרויקט חדש מקבל, לכל מחלקה
+          </span>
+        </span>
+        <ChevronLeft size={18} className="shrink-0 text-black/30" />
+      </Link>
 
       <section className="max-w-lg rounded-2xl border border-black/5 bg-white p-5 shadow-sm">
         <h2 className="mb-4 flex items-center gap-2 text-sm font-bold text-brand-900">

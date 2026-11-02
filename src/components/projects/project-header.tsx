@@ -1,6 +1,14 @@
 "use client";
 
-import { Building2, MapPin, Wallet, Calendar, Pencil, Trash2 } from "lucide-react";
+import {
+  Building2,
+  MapPin,
+  Wallet,
+  Calendar,
+  Pencil,
+  Trash2,
+  UserRound,
+} from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
 import { ProjectForm } from "@/components/projects/project-form";
@@ -9,8 +17,15 @@ import { projectStatusMeta } from "@/lib/constants";
 import { departmentMeta } from "@/lib/departments";
 import { formatDate } from "@/lib/format";
 import type { Project } from "@prisma/client";
+import type { UserOption } from "@/lib/types";
 
-export function ProjectHeader({ project }: { project: Project }) {
+export function ProjectHeader({
+  project,
+  users,
+}: {
+  project: Project & { owner: UserOption | null };
+  users: UserOption[];
+}) {
   const status = projectStatusMeta(project.status);
 
   return (
@@ -52,7 +67,9 @@ export function ProjectHeader({ project }: { project: Project }) {
               </button>
             }
           >
-            {(close) => <ProjectForm project={project} onClose={close} />}
+            {(close) => (
+              <ProjectForm project={project} users={users} onClose={close} />
+            )}
           </Modal>
           <button
             onClick={() => {
@@ -72,7 +89,17 @@ export function ProjectHeader({ project }: { project: Project }) {
         </div>
       </div>
 
-      <div className="mt-5 grid grid-cols-2 gap-4 border-t border-black/5 pt-5 sm:grid-cols-4">
+      <div className="mt-5 grid grid-cols-2 gap-4 border-t border-black/5 pt-5 sm:grid-cols-3 lg:grid-cols-6">
+        <InfoItem
+          icon={<UserRound size={14} />}
+          label="אחראי"
+          value={project.owner?.name ?? "—"}
+        />
+        <InfoItem
+          icon={<MapPin size={14} />}
+          label="עיר"
+          value={project.city ?? "—"}
+        />
         <InfoItem
           icon={<MapPin size={14} />}
           label="כתובת"

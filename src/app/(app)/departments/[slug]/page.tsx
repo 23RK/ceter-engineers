@@ -18,13 +18,18 @@ export default async function DepartmentPage({
   const department = departmentBySlug(slug);
   if (!department) notFound();
 
-  const [projects, unassignedCount] = await Promise.all([
+  const [projects, unassignedCount, users] = await Promise.all([
     prisma.project.findMany({
       where: { department: department.value },
       include: { tasks: { select: { status: true } } },
       orderBy: { createdAt: "desc" },
     }),
     prisma.project.count({ where: { department: null } }),
+    prisma.user.findMany({
+      where: { role: "PARTNER" },
+      select: { id: true, name: true, color: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   return (
@@ -40,7 +45,7 @@ export default async function DepartmentPage({
               : `${projects.length} פרויקטים`}
           </p>
         </div>
-        <NewProjectButton department={department.value} />
+        <NewProjectButton department={department.value} users={users} />
       </div>
 
       <UnassignedProjectsBanner count={unassignedCount} />

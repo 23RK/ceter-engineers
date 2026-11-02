@@ -10,6 +10,7 @@ import { PROJECT_STATUSES } from "@/lib/constants";
 import { DEPARTMENTS } from "@/lib/departments";
 import { toDateInputValue } from "@/lib/format";
 import type { Department, Project } from "@prisma/client";
+import type { UserOption } from "@/lib/types";
 
 const initialState: ActionState = {};
 
@@ -18,10 +19,13 @@ const inputClass =
 
 export function ProjectForm({
   project,
+  users,
   defaultDepartment,
   onClose,
 }: {
   project?: Project;
+  /** The partners, for "אחראי". */
+  users: UserOption[];
   /** Pre-selected when creating from a department screen. */
   defaultDepartment?: Department;
   onClose: () => void;
@@ -86,10 +90,37 @@ export function ProjectForm({
           />
         </div>
         <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium text-brand-900">אחראי</label>
+          <select
+            name="ownerId"
+            defaultValue={project?.ownerId ?? ""}
+            className={inputClass}
+          >
+            <option value="">ללא</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-brand-900">כתובת</label>
           <input
             name="address"
             defaultValue={project?.address ?? ""}
+            className={inputClass}
+            placeholder="רחוב ומספר"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium text-brand-900">עיר</label>
+          <input
+            name="city"
+            defaultValue={project?.city ?? ""}
             className={inputClass}
           />
         </div>

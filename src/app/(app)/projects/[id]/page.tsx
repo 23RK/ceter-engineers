@@ -5,7 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { departmentHref, departmentMeta } from "@/lib/departments";
 import { ProjectHeader } from "@/components/projects/project-header";
-import { ProjectMilestones } from "@/components/projects/project-milestones";
+import { ProjectStages } from "@/components/projects/project-stages";
+import { missingTemplateTitles } from "@/lib/stages";
 import { ProjectTasks } from "@/components/projects/project-tasks";
 
 export default async function ProjectDetailPage({
@@ -16,11 +17,12 @@ export default async function ProjectDetailPage({
   await requireUser();
   const { id } = await params;
 
-  const [project, users, projects] = await Promise.all([
+  const [project, users, projects, templates] = await Promise.all([
     prisma.project.findUnique({
       where: { id },
       include: {
-        milestones: true,
+        milestones: { orderBy: [{ order: "asc" }, { createdAt: "asc" }] },
+        owner: { select: { id: true, name: true, color: true } },
         tasks: { include: { assignee: true, project: true } },
       },
     }),
@@ -33,9 +35,24 @@ export default async function ProjectDetailPage({
       select: { id: true, name: true, status: true },
       orderBy: { name: "asc" },
     }),
+    // Both departments' templates (tiny) - so this runs in parallel with the
+    // project query instead of waiting for its department.
+    prisma.stageTemplate.findMany({
+      select: { department: true, title: true },
+      orderBy: { order: "asc" },
+    }),
   ]);
 
   if (!project) notFound();
+
+  const missingTemplateCount = project.department
+    ? missingTemplateTitles(
+        templates
+          .filter((t) => t.department === project.department)
+          .map((t) => t.title),
+        project.milestones.map((m) => m.title)
+      ).length
+    : 0;
 
   return (
     <div className="flex flex-col gap-5">
@@ -48,8 +65,14 @@ export default async function ProjectDetailPage({
           ? departmentMeta(project.department).label
           : "שיוך מחלקות"}
       </Link>
-      <ProjectHeader project={project} />
-      <ProjectMilestones projectId={project.id} milestones={project.milestones} />
+      <ProjectHeader project={project} users={users} />
+      <ProjectStages
+        projectId={project.id}
+        hasDepartment={!!project.department}
+        projectStart={project.startDate}
+        stages={project.milestones}
+        missingTemplateCount={missingTemplateCount}
+      />
       <ProjectTasks
         projectId={project.id}
         tasks={project.tasks}

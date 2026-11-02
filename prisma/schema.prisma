@@ -23,6 +23,13 @@ enum Department {
   VILLA // ניהול ופיקוח – וילות
 }
 
+// A project stage's progress (SPEC §3.3).
+enum StageStatus {
+  NOT_STARTED // לא התחיל
+  IN_PROGRESS // בביצוע
+  DONE // הושלם
+}
+
 enum TaskStatus {
   TODO
   IN_PROGRESS
@@ -64,6 +71,8 @@ model User {
   color     String   @default("#2563eb")
   createdAt DateTime @default(now())
 
+  ownedProjects Project[] @relation("ProjectOwner")
+
   passwordHash      String? // bcrypt
   // Sessions signed in before this moment are rejected (sign out everywhere
   // on password change).
@@ -85,6 +94,7 @@ model Project {
   name        String
   client      String?
   address     String?
+  city        String?
   status      ProjectStatus @default(PLANNING)
   department  Department?
   description String?
@@ -94,23 +104,47 @@ model Project {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
+  // אחראי (רון / גיא)
+  owner   User?   @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  ownerId String?
+
   tasks      Task[]
   milestones Milestone[]
   activities Activity[]
 
   @@index([department])
+  @@index([ownerId])
 }
 
+// A project stage (shown as "שלב" in the UI). dueDate is the planned date,
+// completedAt the actual date. `done` is kept in sync with status == DONE for
+// backward compatibility (it can be dropped later, with approval).
 model Milestone {
-  id        String    @id @default(cuid())
-  title     String
-  dueDate   DateTime?
-  done      Boolean   @default(false)
-  order     Int       @default(0)
-  createdAt DateTime  @default(now())
+  id          String      @id @default(cuid())
+  title       String
+  dueDate     DateTime?
+  done        Boolean     @default(false)
+  status      StageStatus @default(NOT_STARTED)
+  completedAt DateTime?
+  order       Int         @default(0)
+  createdAt   DateTime    @default(now())
 
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId String
+
+  @@index([projectId, order])
+}
+
+// The default stages a new project of a department starts with (SPEC §3.3).
+// Edited in Settings; changes apply to new projects only.
+model StageTemplate {
+  id         String     @id @default(cuid())
+  department Department
+  title      String
+  order      Int
+  createdAt  DateTime   @default(now())
+
+  @@index([department, order])
 }
 
 model Task {
