@@ -48,6 +48,42 @@ enum ContactRole {
   OTHER // אחר
 }
 
+// בדק בית (SPEC §4.2)
+enum EmploymentType {
+  OWNER // בעלים (רון / גיא) - never owed inspector pay
+  FREELANCER
+  EMPLOYEE
+}
+
+enum InspectionKind {
+  REGULAR // רגילה
+  REPEAT // חוזרת - after the contractor fixed the defects
+}
+
+enum InspectionStatus {
+  PENDING_SCHEDULING // ממתין לתיאום
+  SCHEDULED // תואם
+  DONE // בוצע
+  REPORT_SENT // דוח נשלח
+  COMPLETED // הושלם
+  CANCELED // בוטל
+}
+
+enum InspectionPaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
+enum PaymentMethod {
+  TRANSFER // העברה
+  BIT // ביט
+  PAYBOX // פייבוקס
+  CHECK // צ'ק
+  CASH // מזומן
+  CREDIT // אשראי
+}
+
 enum TaskStatus {
   TODO
   IN_PROGRESS
@@ -111,6 +147,8 @@ model User {
   supervisionReports SupervisionReport[]
   notifications      Notification[]      @relation("NotificationRecipient")
   sentNotifications  Notification[]      @relation("NotificationActor")
+  inspector          Inspector?
+  inspections        Inspection[]
 }
 
 model Project {
@@ -464,4 +502,136 @@ model Activity {
 
   project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId String?
+}
+
+// ---------------------------------------------------------------------------
+// בדק בית (SPEC §4). A management board only - the inspection itself and its
+// report are done in external apps. All amounts are without VAT.
+
+model Inspector {
+  id             String         @id @default(cuid())
+  name           String
+  phone          String?
+  email          String?
+  color          String         @default("#64748b")
+  active         Boolean        @default(true)
+  employmentType EmploymentType @default(FREELANCER)
+  createdAt      DateTime       @default(now())
+
+  // For a future sign-in of the inspector (SPEC §4.5); רון / גיא link to their users.
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId String? @unique
+
+  rates       InspectorRate[]
+  inspections Inspection[]
+}
+
+// סוגי נכס - an editable list. Not deleted once used; deactivated instead.
+model ApartmentType {
+  id        String   @id @default(cuid())
+  name      String
+  order     Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  priceTiers  PriceTier[]
+  rates       InspectorRate[]
+  inspections Inspection[]
+}
+
+// מחירון ללקוח: a unit price per property type from a number of units in
+// the order (minUnits 1 = the base price; e.g. 2 = "2–3", 4 = "4+").
+model PriceTier {
+  id        String   @id @default(cuid())
+  minUnits  Int
+  unitPrice Float
+  createdAt DateTime @default(now())
+
+  apartmentType   ApartmentType @relation(fields: [apartmentTypeId], references: [id], onDelete: Cascade)
+  apartmentTypeId String
+
+  @@unique([apartmentTypeId, minUnits])
+}
+
+// תעריף בודק: per inspector x kind, optionally for one property type (null =
+// every type without its own rate). multiUnitRate is the reduced per-unit
+// rate when one visit covers several units.
+model InspectorRate {
+  id            String         @id @default(cuid())
+  kind          InspectionKind
+  rate          Float
+  multiUnitRate Float?
+  createdAt     DateTime       @default(now())
+
+  inspector       Inspector      @relation(fields: [inspectorId], references: [id], onDelete: Cascade)
+  inspectorId     String
+  apartmentType   ApartmentType? @relation(fields: [apartmentTypeId], references: [id], onDelete: Cascade)
+  apartmentTypeId String?
+
+  @@index([inspectorId])
+}
+
+// Small app-wide settings, e.g. vatRate (שיעור מע"מ, percent).
+model AppSetting {
+  key   String @id
+  value String
+}
+
+model Inspection {
+  id         String           @id @default(cuid())
+  // Execution
+  date       DateTime? // date only; empty while waiting to be scheduled
+  time       String? // "HH:mm"
+  kind       InspectionKind   @default(REGULAR)
+  unitsCount Int              @default(1)
+  status     InspectionStatus @default(PENDING_SCHEDULING)
+
+  // Client
+  clientName  String
+  clientPhone String?
+  clientEmail String?
+
+  // Property
+  city                String?
+  address             String?
+  apartmentNumber     String?
+  developerContractor String?
+
+  // Money - all without VAT. Saved on the inspection: later rate or price
+  // changes don't touch it.
+  price         Float?
+  paymentStatus InspectionPaymentStatus @default(UNPAID)
+  amountPaid    Float                   @default(0)
+  paymentMethod PaymentMethod?
+  paidAt        DateTime?
+
+  // Report
+  reportSent   Boolean   @default(false)
+  reportSentAt DateTime?
+
+  // Inspector pay
+  inspectorPay    Float?
+  inspectorPaid   Boolean   @default(false)
+  inspectorPaidAt DateTime?
+
+  notes         String?
+  googleEventId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  inspector          Inspector?     @relation(fields: [inspectorId], references: [id], onDelete: SetNull)
+  inspectorId        String?
+  apartmentType      ApartmentType? @relation(fields: [apartmentTypeId], references: [id], onDelete: SetNull)
+  apartmentTypeId    String?
+  parentInspection   Inspection?    @relation("RepeatInspection", fields: [parentInspectionId], references: [id], onDelete: SetNull)
+  parentInspectionId String?
+  repeatInspections  Inspection[]   @relation("RepeatInspection")
+  createdBy          User?          @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdById        String?
+
+  @@index([date])
+  @@index([status])
+  @@index([inspectorId, date])
+  @@index([clientPhone])
+  @@index([parentInspectionId])
 }

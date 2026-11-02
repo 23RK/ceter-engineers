@@ -66,6 +66,19 @@ async function main() {
 
   await setInitialPasswords();
 
+  // בדק בית: the owner inspectors (migration 20261104090000) link to their
+  // users. On an existing database the migration already did it; on a fresh
+  // one the users only exist now.
+  for (const [inspectorId, userId] of [
+    ["inspector-ron", ron.id],
+    ["inspector-guy", guy.id],
+  ]) {
+    await prisma.inspector.updateMany({
+      where: { id: inspectorId, userId: null },
+      data: { userId },
+    });
+  }
+
   const existingProjects = await prisma.project.count();
   if (existingProjects > 0) {
     console.log("כבר קיימים פרויקטים במסד הנתונים - מדלג על נתוני דוגמה.");

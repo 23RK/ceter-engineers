@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   CircleAlert,
   CircleCheck,
+  ClipboardCheck,
   KeyRound,
   LayoutList,
 } from "lucide-react";
@@ -99,6 +100,24 @@ export default async function SettingsPage({
           </span>
           <span className="block text-xs text-black/50">
             השלבים שפרויקט חדש מקבל, לכל מחלקה
+          </span>
+        </span>
+        <ChevronLeft size={18} className="shrink-0 text-black/30" />
+      </Link>
+
+      <Link
+        href="/settings/inspections"
+        className="flex max-w-lg items-center gap-3 rounded-2xl border border-black/5 bg-white p-5 shadow-sm transition hover:border-brand-200 hover:shadow-md"
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+          <ClipboardCheck size={18} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold text-brand-900">
+            הגדרות בדק בית
+          </span>
+          <span className="block text-xs text-black/50">
+            בודקים, סוגי נכס, מחירון, תעריפים ומע&quot;מ
           </span>
         </span>
         <ChevronLeft size={18} className="shrink-0 text-black/30" />
