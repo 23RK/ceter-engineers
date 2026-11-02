@@ -1,40 +1,41 @@
 import Link from "next/link";
-import { endOfMonth, startOfDay } from "date-fns";
 import {
-  ListChecks,
-  AlarmClock,
   Building2,
-  Flag,
-  Calendar,
   CalendarDays,
+  ClipboardCheck,
   Handshake,
+  House,
+  Wallet,
   Activity as ActivityIcon,
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { UnassignedProjectsBanner } from "@/components/projects/unassigned-banner";
-import { taskPriorityMeta, PROJECT_STATUSES } from "@/lib/constants";
+import { DashboardTasks } from "@/components/dashboard/dashboard-tasks";
+import { PROJECT_STATUSES } from "@/lib/constants";
+import { DEPARTMENTS } from "@/lib/departments";
+import { isArchived } from "@/lib/project-list";
+import { expectedCollection, monthRange, splitDeadlines } from "@/lib/dashboard";
+import { USER_OPTION_SELECT } from "@/lib/types";
 import {
   formatDate,
   formatDateShort,
+  formatMoney,
   formatTime,
   isOverdue,
+  israelToday,
 } from "@/lib/format";
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const today = startOfDay(new Date());
-  const monthEnd = endOfMonth(today);
+  const today = israelToday();
+  const { next: nextMonth } = monthRange(today);
 
   const [
-    openTasksCount,
-    overdueTasksCount,
-    activeProjectsCount,
-    milestonesDueCount,
     openTasks,
-    upcomingTasks,
+    projects,
+    unpaidPayments,
     activities,
     projectStatusCounts,
     users,
@@ -43,32 +44,42 @@ export default async function DashboardPage() {
     urgentLeadTasks,
     unassignedProjectsCount,
   ] = await Promise.all([
-    prisma.task.count({ where: { status: { not: "DONE" } } }),
-    prisma.task.count({
-      where: { status: { not: "DONE" }, dueDate: { lt: today } },
-    }),
-    prisma.project.count({ where: { status: "ACTIVE" } }),
-    prisma.milestone.count({
-      where: { done: false, dueDate: { gte: today, lte: monthEnd } },
-    }),
+    // All open tasks (a small table): the lists, counts and workload come from it.
     prisma.task.findMany({
       where: { status: { not: "DONE" } },
-      include: { assignee: true },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        priority: true,
+        dueDate: true,
+        assigneeId: true,
+        project: { select: { id: true, name: true, department: true } },
+      },
     }),
-    prisma.task.findMany({
-      where: { status: { not: "DONE" }, dueDate: { not: null } },
-      orderBy: { dueDate: "asc" },
-      take: 6,
-      include: { assignee: true, project: true },
+    prisma.project.findMany({
+      select: { department: true, status: true, archivedAt: true },
+    }),
+    prisma.payment.findMany({
+      where: { paid: false, dueDate: { lt: nextMonth } },
+      select: {
+        id: true,
+        title: true,
+        amount: true,
+        paid: true,
+        dueDate: true,
+        project: { select: { id: true, name: true } },
+      },
     }),
     prisma.activity.findMany({
       orderBy: { createdAt: "desc" },
       take: 10,
-      include: { actor: true, project: true },
+      include: { project: { select: { id: true, name: true } } },
     }),
     prisma.project.groupBy({ by: ["status"], _count: true }),
     prisma.user.findMany({
       where: { role: "PARTNER" },
+      select: USER_OPTION_SELECT,
       orderBy: { name: "asc" },
     }),
     prisma.meeting.findMany({
@@ -88,16 +99,36 @@ export default async function DashboardPage() {
     prisma.project.count({ where: { department: null } }),
   ]);
 
+  const isLate = (d: Date | null) => !!d && d.getTime() < today.getTime();
+  const departmentCards = DEPARTMENTS.map((d) => ({
+    ...d,
+    activeProjects: projects.filter((p) => p.department === d.value && !isArchived(p)).length,
+    overdueTasks: openTasks.filter((t) => t.project?.department === d.value && isLate(t.dueDate)).length,
+  }));
+  const otherOverdue = openTasks.filter(
+    (t) => !t.project?.department && isLate(t.dueDate)
+  ).length;
+  const collection = expectedCollection(unpaidPayments, today);
+
   const workloadByUser = users.map((u) => {
     const tasks = openTasks.filter((t) => t.assigneeId === u.id);
     return {
       user: u,
       total: tasks.length,
-      overdue: tasks.filter((t) => isOverdue(t.dueDate)).length,
+      overdue: tasks.filter((t) => isLate(t.dueDate)).length,
     };
   });
 
-  const unassignedCount = openTasks.filter((t) => !t.assigneeId).length;
+  // Only what the lists need: overdue, the next two weeks, and unassigned.
+  const { overdue, upcoming } = splitDeadlines(openTasks, today);
+  const listed = new Set([
+    ...overdue.map((o) => o.task.id),
+    ...upcoming.map((t) => t.id),
+    ...openTasks.filter((t) => !t.assigneeId).map((t) => t.id),
+  ]);
+  const listTasks = openTasks
+    .filter((t) => listed.has(t.id))
+    .map((t) => ({ ...t, project: t.project && { id: t.project.id, name: t.project.name } }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -112,121 +143,71 @@ export default async function DashboardPage() {
 
       <UnassignedProjectsBanner count={unassignedProjectsCount} />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard
-          icon={<ListChecks size={20} />}
-          label="משימות פתוחות"
-          value={openTasksCount}
-        />
-        <StatCard
-          icon={<AlarmClock size={20} />}
-          label="משימות באיחור"
-          value={overdueTasksCount}
-          tone={overdueTasksCount > 0 ? "danger" : "default"}
-        />
-        <StatCard
-          icon={<Building2 size={20} />}
-          label="פרויקטים פעילים"
-          value={activeProjectsCount}
-        />
-        <StatCard
-          icon={<Flag size={20} />}
-          label="אבני דרך החודש"
-          value={milestonesDueCount}
-        />
+      {/* Cards per department (SPEC §3.6) */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
+        {departmentCards.map((d) => (
+          <Link
+            key={d.value}
+            href={`/departments/${d.slug}`}
+            className="group flex flex-col gap-3 rounded-2xl border border-black/5 bg-white p-4 shadow-sm transition hover:shadow-md"
+          >
+            <p className="flex items-center gap-2 text-sm font-bold text-brand-900 group-hover:text-brand-600">
+              {d.value === "VILLA" ? <House size={16} /> : <Building2 size={16} />}
+              {d.label}
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <p className="text-2xl font-bold text-brand-900">{d.activeProjects}</p>
+                <p className="text-xs text-black/50">פרויקטים פעילים</p>
+              </div>
+              <div>
+                <p className={`text-2xl font-bold ${d.overdueTasks ? "text-red-600" : "text-brand-900"}`}>
+                  {d.overdueTasks}
+                </p>
+                <p className="text-xs text-black/50">משימות באיחור</p>
+              </div>
+            </div>
+          </Link>
+        ))}
+        <div className="flex flex-col gap-3 rounded-2xl border border-dashed border-black/10 bg-white/60 p-4">
+          <p className="flex items-center gap-2 text-sm font-bold text-black/45">
+            <ClipboardCheck size={16} />
+            בדק בית
+            <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-semibold">בקרוב</span>
+          </p>
+          <div>
+            <p className="text-2xl font-bold text-black/30">—</p>
+            <p className="text-xs text-black/40">בדיקות החודש (שלב 3)</p>
+          </div>
+        </div>
+        <a
+          href="#collection"
+          className="flex flex-col gap-3 rounded-2xl border border-black/5 bg-white p-4 shadow-sm transition hover:shadow-md"
+        >
+          <p className="flex items-center gap-2 text-sm font-bold text-brand-900">
+            <Wallet size={16} />
+            גבייה צפויה החודש
+          </p>
+          <div>
+            <p className="text-2xl font-bold text-brand-900">{formatMoney(collection.thisMonthTotal)}</p>
+            <p className="text-xs text-black/50">
+              {collection.thisMonth.length === 1 ? "תשלום אחד" : `${collection.thisMonth.length} תשלומים`}
+              {collection.earlierTotal > 0 && (
+                <span className="font-semibold text-red-600"> · ועוד {formatMoney(collection.earlierTotal)} באיחור</span>
+              )}
+            </p>
+          </div>
+        </a>
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="flex flex-col gap-5 lg:col-span-2">
-          {/* Partner workload */}
-          <section className="rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
-            <h2 className="mb-4 text-sm font-bold text-brand-900">
-              עומס עבודה לפי שותף
-            </h2>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {workloadByUser.map(({ user: u, total, overdue }) => (
-                <div
-                  key={u.id}
-                  className="flex items-center justify-between rounded-xl border border-black/5 p-4"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span
-                      className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white"
-                      style={{ backgroundColor: u.color }}
-                    >
-                      {u.name.slice(0, 1)}
-                    </span>
-                    <span className="text-sm font-medium text-brand-900">
-                      {u.name}
-                    </span>
-                  </div>
-                  <div className="text-left">
-                    <p className="text-sm font-bold text-brand-900">
-                      {total} משימות
-                    </p>
-                    {overdue > 0 && (
-                      <p className="text-xs font-medium text-red-500">
-                        {overdue} באיחור
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {unassignedCount > 0 && (
-                <div className="flex items-center justify-between rounded-xl border border-dashed border-black/10 p-4 text-black/40">
-                  <span className="text-sm">ללא שיוך</span>
-                  <span className="text-sm font-bold">
-                    {unassignedCount} משימות
-                  </span>
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* Upcoming deadlines */}
-          <section className="rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
-            <div className="mb-4 flex items-center gap-2">
-              <Calendar size={16} className="text-brand-600" />
-              <h2 className="text-sm font-bold text-brand-900">
-                מועדי יעד קרובים
-              </h2>
-            </div>
-            {upcomingTasks.length === 0 ? (
-              <p className="text-sm text-black/40">אין משימות עם תאריך יעד קרוב.</p>
-            ) : (
-              <div className="flex flex-col divide-y divide-black/5">
-                {upcomingTasks.map((task) => {
-                  const overdue = isOverdue(task.dueDate);
-                  const priority = taskPriorityMeta(task.priority);
-                  return (
-                    <div
-                      key={task.id}
-                      className="flex items-center justify-between gap-3 py-2.5"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${priority.dot}`} />
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-brand-900">
-                            {task.title}
-                          </p>
-                          {task.project && (
-                            <p className="truncate text-xs text-black/40">
-                              {task.project.name}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <span
-                        className={`shrink-0 text-xs font-medium ${overdue ? "text-red-600" : "text-black/40"}`}
-                      >
-                        {formatDateShort(task.dueDate)}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
+          <DashboardTasks tasks={listTasks} users={users} today={today.toISOString().slice(0, 10)} />
+          {otherOverdue > 0 && (
+            <p className="-mt-3 text-xs text-black/45">
+              {otherOverdue === 1 ? "משימה אחת באיחור" : `${otherOverdue} משימות באיחור`} בלי פרויקט או בפרויקט בלי מחלקה (לא נספרו בכרטיסי המחלקות).
+            </p>
+          )}
 
           {/* Upcoming meetings */}
           <section className="rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
@@ -270,6 +251,70 @@ export default async function DashboardPage() {
         </div>
 
         <div className="flex flex-col gap-5">
+          {/* גבייה צפויה (replaces "אבני דרך החודש", SPEC §3.6) */}
+          <section id="collection" className="scroll-mt-20 rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
+            <div className="mb-4 flex items-center gap-2">
+              <Wallet size={16} className="text-brand-600" />
+              <h2 className="text-sm font-bold text-brand-900">גבייה צפויה</h2>
+            </div>
+            {collection.thisMonth.length + collection.earlier.length === 0 ? (
+              <p className="text-sm text-black/40">אין תשלומים פתוחים לחודש הזה.</p>
+            ) : (
+              <ul className="flex flex-col divide-y divide-black/5">
+                {[...collection.earlier, ...collection.thisMonth].map((p) => {
+                  const late = isLate(p.dueDate);
+                  return (
+                    <li key={p.id}>
+                      <Link
+                        href={`/projects/${p.project.id}?tab=finance`}
+                        className="flex items-center justify-between gap-3 py-2.5 transition hover:opacity-70"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-brand-900">
+                            {p.title ?? "תשלום"} · {formatMoney(p.amount)}
+                          </p>
+                          <p className="truncate text-xs text-black/40">{p.project.name}</p>
+                        </div>
+                        <span className={`shrink-0 text-xs font-medium ${late ? "text-red-600" : "text-black/40"}`}>
+                          {formatDateShort(p.dueDate)}
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+          {/* Partner workload */}
+          <section className="rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
+            <h2 className="mb-4 text-sm font-bold text-brand-900">
+              עומס עבודה לפי שותף
+            </h2>
+            <div className="flex flex-col gap-3">
+              {workloadByUser.map(({ user: u, total, overdue: late }) => (
+                <div
+                  key={u.id}
+                  className="flex items-center justify-between rounded-xl border border-black/5 p-3"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white"
+                      style={{ backgroundColor: u.color }}
+                    >
+                      {u.name.slice(0, 1)}
+                    </span>
+                    <span className="text-sm font-medium text-brand-900">{u.name}</span>
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-bold text-brand-900">{total} משימות</p>
+                    {late > 0 && <p className="text-xs font-medium text-red-500">{late} באיחור</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
           {/* Projects by status */}
           <section className="rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
             <h2 className="mb-4 text-sm font-bold text-brand-900">
