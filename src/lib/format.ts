@@ -43,3 +43,11 @@ export function israelToday() {
   }).format(new Date());
   return new Date(ymd);
 }
+
+/** ₪ amount for display, without agorot when it's a whole number. */
+export function formatMoney(amount: number | null | undefined) {
+  if (amount === null || amount === undefined) return null;
+  return `₪${amount.toLocaleString("he-IL", {
+    maximumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+  })}`;
+}
