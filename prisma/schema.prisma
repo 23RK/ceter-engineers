@@ -36,28 +36,33 @@ enum LeadStatus {
   LOST
 }
 
+enum UserRole {
+  ADMIN // reserved - no admin user for now (only רון and גיא sign in)
+  PARTNER // רון / גיא - shown in assignee lists, syncs a Google Calendar
+}
+
 enum GoogleSyncStatus {
   SYNCED
   ERROR
 }
 
-// The single shared company login. There is normally just one row here -
-// both partners sign in with the same company email + password.
-model Credential {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  createdAt    DateTime @default(now())
-}
-
-// A partner's profile. Not a login - after signing in with the shared
-// Credential, each partner picks their own profile so tasks/activity can
-// be attributed to the right person.
+// A person who can sign in, with their own email + password. Only rows
+// with both an email and a password can sign in.
 model User {
   id        String   @id @default(cuid())
   name      String
+  email     String?  @unique // always stored lower-case
+  role      UserRole @default(PARTNER)
   color     String   @default("#2563eb")
   createdAt DateTime @default(now())
+
+  passwordHash      String? // bcrypt
+  // Sessions signed in before this moment are rejected (sign out everywhere
+  // on password change).
+  passwordChangedAt DateTime?
+  // Brute-force protection: too many wrong passwords lock the account briefly.
+  failedLoginCount  Int       @default(0)
+  lockedUntil       DateTime?
 
   assignedTasks Task[]        @relation("AssignedTasks")
   createdTasks  Task[]        @relation("CreatedTasks")
@@ -165,8 +170,11 @@ model Meeting {
   syncs    MeetingGoogleSync[]
 }
 
-// One row per partner who has connected their Gmail account for Calendar
-// sync. Access/refresh tokens are stored encrypted (see src/lib/crypto.ts).
+// One row per partner whose Google Calendar is synced - created when they
+// connect it from Settings. Access/refresh tokens are stored encrypted (see
+// src/lib/crypto.ts). `googleEmail` is restricted by a DB CHECK constraint
+// (migration 20261102120000_password_login) to the two partner accounts,
+// and the app additionally requires it to equal the owning user's email.
 model GoogleAccount {
   id                    String    @id @default(cuid())
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -175,10 +183,8 @@ model GoogleAccount {
   encryptedAccessToken  String
   encryptedRefreshToken String
   accessTokenExpiresAt  DateTime
-  // Id of the dedicated "כתר הנדסה" calendar created in the partner's
-  // Google account on connect - never "primary". Keeps business meetings
-  // fully separate from (and never reading) their personal calendar.
-  calendarId            String
+  // Always "primary" - the partner's main Google Calendar.
+  calendarId            String    @default("primary")
   lastSyncedAt          DateTime?
   createdAt             DateTime  @default(now())
 }

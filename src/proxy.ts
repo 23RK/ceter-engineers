@@ -1,41 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
+import {
+  SESSION_COOKIE,
+  SESSION_COOKIE_OPTIONS,
+  shouldRenewSession,
+  signSession,
+  verifySessionToken,
+} from "@/lib/session";
 
 const PUBLIC_PATHS = ["/login"];
-const CHOOSE_USER_PATH = "/choose-user";
 
+// A coarse, cookie-only gate. The real check (does this user still exist,
+// was the password changed since?) happens against the DB in requireUser(),
+// which every page and Server Action calls.
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-
   const isPublic = PUBLIC_PATHS.some(
     (path) => pathname === path || pathname.startsWith(`${path}/`)
   );
-  const isChooseUser =
-    pathname === CHOOSE_USER_PATH || pathname.startsWith(`${CHOOSE_USER_PATH}/`);
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const session = token ? await verifySessionToken(token) : null;
 
-  // Not signed in to the shared company login at all.
   if (!session) {
-    return isPublic ? NextResponse.next() : redirectTo(request, "/login");
+    return isPublic
+      ? NextResponse.next()
+      : NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Signed in, but hitting the login page - send them onward.
-  if (isPublic) {
-    return redirectTo(request, session.partnerId ? "/dashboard" : CHOOSE_USER_PATH);
+  const response = NextResponse.next();
+  // Sliding expiry: keep people signed in on their device while they use it.
+  if (shouldRenewSession(session)) {
+    response.cookies.set(
+      SESSION_COOKIE,
+      await signSession(session.userId, session.authTime),
+      SESSION_COOKIE_OPTIONS
+    );
   }
-
-  // Signed in but no partner (רון / גיא) picked yet - only the picker is allowed.
-  if (!session.partnerId && !isChooseUser) {
-    return redirectTo(request, CHOOSE_USER_PATH);
-  }
-
-  return NextResponse.next();
-}
-
-function redirectTo(request: NextRequest, path: string) {
-  return NextResponse.redirect(new URL(path, request.url));
+  return response;
 }
 
 export const config = {

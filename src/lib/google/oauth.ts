@@ -2,35 +2,30 @@ import "server-only";
 import { google } from "googleapis";
 import { prisma } from "@/lib/prisma";
 import { encrypt, decrypt } from "@/lib/crypto";
+import {
+  CALENDAR_OAUTH_SCOPES,
+  SYNCABLE_GOOGLE_ACCOUNTS,
+  type ConnectDeps,
+} from "@/lib/google/calendar-access";
 
-// Full "calendar" scope (not just calendar.events) - needed so we can
-// create the dedicated business calendar below, not just read/write
-// events on whatever calendar we're pointed at.
-export const GOOGLE_SCOPES = [
-  "https://www.googleapis.com/auth/calendar",
-  "https://www.googleapis.com/auth/userinfo.email",
-  "openid",
-];
+// Google OAuth is used ONLY to connect a partner's own calendar (from
+// Settings) - signing in to the app is email + password.
 
-// The app never touches a partner's primary (personal) calendar - it
-// creates and only ever uses this separate, clearly-named calendar in
-// their Google account, so business meetings never mix with personal
-// ones and neither partner can see the other's actual personal calendar.
-const BUSINESS_CALENDAR_NAME = "כתר הנדסה - פגישות עסקיות";
+const REQUIRED_ENV = [
+  "GOOGLE_CLIENT_ID",
+  "GOOGLE_CLIENT_SECRET",
+  "APP_URL",
+  "TOKEN_ENCRYPTION_KEY",
+] as const;
+
+export function isGoogleConfigured() {
+  return REQUIRED_ENV.every((name) => Boolean(process.env[name]));
+}
 
 function getAppUrl() {
   const url = process.env.APP_URL;
   if (!url) throw new Error("Missing APP_URL environment variable");
   return url.replace(/\/$/, "");
-}
-
-export function isGoogleConfigured() {
-  return Boolean(
-    process.env.GOOGLE_CLIENT_ID &&
-      process.env.GOOGLE_CLIENT_SECRET &&
-      process.env.APP_URL &&
-      process.env.TOKEN_ENCRYPTION_KEY
-  );
 }
 
 function createOAuthClient() {
@@ -41,86 +36,111 @@ function createOAuthClient() {
   );
 }
 
-/** `state` carries the connecting partner's id through the redirect. */
-export function getGoogleAuthUrl(partnerId: string) {
-  const client = createOAuthClient();
-  return client.generateAuthUrl({
-    access_type: "offline",
-    // Forces Google to always re-issue a refresh_token, even for a partner
-    // who connected before (otherwise it's only returned the first time).
-    prompt: "consent",
-    scope: GOOGLE_SCOPES,
-    state: partnerId,
-  });
-}
-
 /**
- * Finds this partner's dedicated business calendar if they already have
- * one (e.g. reconnecting), otherwise creates it. Never returns "primary".
+ * Consent screen for calendar access. `login_hint` pre-selects the partner's
+ * own account; the callback still verifies it server-side, since the user
+ * can pick another account on Google's screen.
  */
-async function getOrCreateBusinessCalendarId(
-  client: InstanceType<typeof google.auth.OAuth2>
-): Promise<string> {
-  const calendar = google.calendar({ version: "v3", auth: client });
-
-  const { data: list } = await calendar.calendarList.list({
-    minAccessRole: "owner",
+export function getCalendarAuthUrl({ state, email }: { state: string; email: string }) {
+  return createOAuthClient().generateAuthUrl({
+    scope: CALENDAR_OAUTH_SCOPES,
+    access_type: "offline",
+    // Always show consent, so Google always returns a refresh token.
+    prompt: "consent",
+    login_hint: email,
+    state,
   });
-  const existing = list.items?.find(
-    (item) => item.summary === BUSINESS_CALENDAR_NAME
-  );
-  if (existing?.id) return existing.id;
-
-  const { data: created } = await calendar.calendars.insert({
-    requestBody: { summary: BUSINESS_CALENDAR_NAME },
-  });
-  if (!created.id) {
-    throw new Error("Google did not return an id for the new calendar");
-  }
-  return created.id;
 }
 
-export async function connectGoogleAccount(partnerId: string, code: string) {
-  const client = createOAuthClient();
-  const { tokens } = await client.getToken(code);
-  if (!tokens.access_token || !tokens.refresh_token) {
-    throw new Error(
-      "Google לא החזיר refresh token - נסו להתחבר שוב ולוודא אישור מלא"
-    );
-  }
+/** Real implementations of the injected dependencies in calendar-access.ts. */
+export const calendarConnectDeps: ConnectDeps = {
+  async exchangeCode(code) {
+    const client = createOAuthClient();
+    const { tokens } = await client.getToken(code);
+    if (!tokens.id_token) throw new Error("Google did not return an ID token");
 
-  client.setCredentials(tokens);
-  const oauth2 = google.oauth2({ version: "v2", auth: client });
-  const { data } = await oauth2.userinfo.get();
-  const calendarId = await getOrCreateBusinessCalendarId(client);
+    // Verifies the ID token's signature, issuer, expiry and audience - the
+    // email we check comes from Google, not from anything the browser sent.
+    const ticket = await client.verifyIdToken({
+      idToken: tokens.id_token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
 
-  await prisma.googleAccount.upsert({
-    where: { userId: partnerId },
-    create: {
-      userId: partnerId,
-      googleEmail: data.email ?? "",
-      encryptedAccessToken: encrypt(tokens.access_token),
-      encryptedRefreshToken: encrypt(tokens.refresh_token),
-      accessTokenExpiresAt: new Date(tokens.expiry_date ?? Date.now() + 3600_000),
-      calendarId,
-    },
-    update: {
-      googleEmail: data.email ?? "",
-      encryptedAccessToken: encrypt(tokens.access_token),
-      encryptedRefreshToken: encrypt(tokens.refresh_token),
-      accessTokenExpiresAt: new Date(tokens.expiry_date ?? Date.now() + 3600_000),
-      calendarId,
-    },
+    return {
+      googleEmail: payload?.email,
+      googleEmailVerified: payload?.email_verified,
+      grantedScopes: (tokens.scope ?? "").split(" ").filter(Boolean),
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiryDate: tokens.expiry_date,
+    };
+  },
+
+  async saveTokens(userId, googleEmail, tokens) {
+    const data = {
+      googleEmail,
+      encryptedAccessToken: encrypt(tokens.accessToken),
+      encryptedRefreshToken: encrypt(tokens.refreshToken),
+      accessTokenExpiresAt: new Date(tokens.expiryDate ?? Date.now() + 3600_000),
+      calendarId: "primary",
+      lastSyncedAt: null,
+    };
+    await prisma.googleAccount.upsert({
+      where: { userId },
+      create: { userId, ...data },
+      update: data,
+    });
+  },
+
+  async revokeToken(token) {
+    await createOAuthClient().revokeToken(token);
+  },
+};
+
+/**
+ * The stored connection for this user - but only if it is their own,
+ * allowed account. Anything else is treated as "not connected".
+ */
+async function getOwnGoogleAccount(userId: string) {
+  const account = await prisma.googleAccount.findUnique({
+    where: { userId },
+    include: { user: { select: { email: true } } },
   });
+  if (
+    !account ||
+    !SYNCABLE_GOOGLE_ACCOUNTS.includes(account.googleEmail) ||
+    account.googleEmail !== account.user.email
+  ) {
+    return null;
+  }
+  return account;
+}
+
+export async function getCalendarConnection(userId: string) {
+  const account = await getOwnGoogleAccount(userId);
+  return account ? { googleEmail: account.googleEmail } : null;
+}
+
+/** Removes the stored tokens and withdraws the grant at Google (best-effort). */
+export async function disconnectCalendar(userId: string) {
+  const account = await prisma.googleAccount.findUnique({ where: { userId } });
+  if (!account) return;
+  await prisma.googleAccount.delete({ where: { userId } });
+  try {
+    await createOAuthClient().revokeToken(decrypt(account.encryptedRefreshToken));
+  } catch {
+    // already revoked / key rotated - the stored tokens are gone either way
+  }
 }
 
 /**
- * Returns an OAuth2 client pre-loaded with a partner's stored credentials.
- * If Google refreshes the access token mid-request (their SDK does this
- * transparently), the new token is persisted back to the DB automatically.
+ * Returns an OAuth2 client pre-loaded with a partner's stored credentials, or
+ * null if they have no valid own-account connection. If Google refreshes the
+ * access token mid-request, the new token is persisted automatically.
  */
 export async function getAuthorizedClientFor(userId: string) {
-  const account = await prisma.googleAccount.findUnique({ where: { userId } });
+  const account = await getOwnGoogleAccount(userId);
   if (!account) return null;
 
   const client = createOAuthClient();
@@ -151,8 +171,4 @@ export async function getAuthorizedClientFor(userId: string) {
   });
 
   return { client, account };
-}
-
-export async function disconnectGoogleAccount(userId: string) {
-  await prisma.googleAccount.delete({ where: { userId } }).catch(() => {});
 }

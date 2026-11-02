@@ -3,37 +3,72 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-const COMPANY_EMAIL = "keterengineers@gmail.com";
-const DEFAULT_PASSWORD = "keter2026!";
+/**
+ * Initial passwords come from environment variables, never from code:
+ * INITIAL_PASSWORD_RON / INITIAL_PASSWORD_GUY. A password is set ONLY for a
+ * user who has none yet, so this never overwrites a password changed in
+ * Settings. To reset a forgotten password: clear that user's passwordHash
+ * in the database, set the variable, and redeploy (see README).
+ */
+async function setInitialPasswords() {
+  const initial = [
+    { email: "ronketerltd@gmail.com", envVar: "INITIAL_PASSWORD_RON" },
+    { email: "guyketerltd@gmail.com", envVar: "INITIAL_PASSWORD_GUY" },
+  ];
+  for (const { email, envVar } of initial) {
+    const password = process.env[envVar];
+    if (!password) continue;
+    if (password.length < 8) {
+      console.warn(`${envVar} קצרה מ-8 תווים - לא הוגדרה.`);
+      continue;
+    }
+    const { count } = await prisma.user.updateMany({
+      where: { email, passwordHash: null },
+      data: {
+        passwordHash: await bcrypt.hash(password, 12),
+        passwordChangedAt: new Date(),
+        failedLoginCount: 0,
+        lockedUntil: null,
+      },
+    });
+    if (count > 0) console.log(`הוגדרה סיסמה ראשונית עבור ${email}`);
+  }
+}
 
 async function main() {
-  const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
-
-  // The single shared company login - both partners sign in with this.
-  await prisma.credential.upsert({
-    where: { email: COMPANY_EMAIL },
-    update: {},
-    create: { email: COMPANY_EMAIL, passwordHash },
-  });
-
-  // Partner profiles - picked after login to attribute tasks/activity.
+  // The sign-in allow-list: each person signs in with "Sign in with Google"
+  // using exactly this email. On an existing database these rows were
+  // already linked by the google_sign_in migration, so `update` stays empty
+  // (never overwrite names/colors someone changed).
   const ron = await prisma.user.upsert({
     where: { id: "partner-ron" },
     update: {},
-    create: { id: "partner-ron", name: "רון", color: "#2251e0" },
+    create: {
+      id: "partner-ron",
+      name: "רון",
+      email: "ronketerltd@gmail.com",
+      role: "PARTNER",
+      color: "#2251e0",
+    },
   });
 
   const guy = await prisma.user.upsert({
     where: { id: "partner-guy" },
     update: {},
-    create: { id: "partner-guy", name: "גיא", color: "#eda520" },
+    create: {
+      id: "partner-guy",
+      name: "גיא",
+      email: "guyketerltd@gmail.com",
+      role: "PARTNER",
+      color: "#eda520",
+    },
   });
+
+  await setInitialPasswords();
 
   const existingProjects = await prisma.project.count();
   if (existingProjects > 0) {
     console.log("כבר קיימים פרויקטים במסד הנתונים - מדלג על נתוני דוגמה.");
-    console.log("פרטי התחברות:");
-    console.log(`  ${COMPANY_EMAIL} / ${DEFAULT_PASSWORD}`);
     return;
   }
 
@@ -195,8 +230,6 @@ async function main() {
   });
 
   console.log("נתוני דוגמה נוצרו בהצלחה!");
-  console.log("פרטי התחברות (משותף לרון ולגיא):");
-  console.log(`  ${COMPANY_EMAIL} / ${DEFAULT_PASSWORD}`);
 }
 
 main()

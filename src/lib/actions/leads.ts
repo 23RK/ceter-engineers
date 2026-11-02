@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { requirePartner } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import type { LeadStatus, TaskStatus } from "@prisma/client";
 import type { ActionState } from "@/lib/actions/tasks";
 
@@ -23,7 +23,7 @@ export async function createLead(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  await requirePartner();
+  await requireUser();
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "יש להזין שם לקוח/יזם" };
@@ -45,7 +45,7 @@ export async function updateLead(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  await requirePartner();
+  await requireUser();
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "יש להזין שם לקוח/יזם" };
@@ -65,7 +65,7 @@ export async function updateLead(
 }
 
 export async function deleteLead(leadId: string) {
-  await requirePartner();
+  await requireUser();
   await prisma.lead.delete({ where: { id: leadId } });
   revalidatePath("/business-dev");
   redirect("/business-dev");
@@ -76,7 +76,7 @@ export async function createLeadTask(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  await requirePartner();
+  await requireUser();
 
   const title = String(formData.get("title") ?? "").trim();
   if (!title) return { error: "יש להזין כותרת למשימה" };
@@ -100,7 +100,7 @@ export async function setLeadTaskStatus(
   leadTaskId: string,
   status: TaskStatus
 ) {
-  await requirePartner();
+  await requireUser();
   const task = await prisma.leadTask.update({
     where: { id: leadTaskId },
     data: { status },
@@ -109,7 +109,7 @@ export async function setLeadTaskStatus(
 }
 
 export async function deleteLeadTask(leadTaskId: string) {
-  await requirePartner();
+  await requireUser();
   const task = await prisma.leadTask.delete({ where: { id: leadTaskId } });
   revalidatePath(`/business-dev/${task.leadId}`);
 }

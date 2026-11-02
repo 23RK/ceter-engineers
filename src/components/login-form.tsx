@@ -5,11 +5,11 @@ import { loginAction, type LoginState } from "@/lib/actions/auth";
 
 const initialState: LoginState = {};
 
+const inputClass =
+  "rounded-lg border border-black/10 bg-white px-3.5 py-2.5 text-right text-sm shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
+
 export function LoginForm() {
-  const [state, formAction, pending] = useActionState(
-    loginAction,
-    initialState
-  );
+  const [state, formAction, pending] = useActionState(loginAction, initialState);
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
@@ -22,17 +22,14 @@ export function LoginForm() {
           name="email"
           type="email"
           required
-          autoComplete="email"
+          autoComplete="username"
           dir="ltr"
-          className="rounded-lg border border-black/10 bg-white px-3.5 py-2.5 text-right text-sm shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
-          placeholder="keterengineers@gmail.com"
+          defaultValue={state.email}
+          className={inputClass}
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <label
-          htmlFor="password"
-          className="text-sm font-medium text-brand-900"
-        >
+        <label htmlFor="password" className="text-sm font-medium text-brand-900">
           סיסמה
         </label>
         <input
@@ -42,7 +39,7 @@ export function LoginForm() {
           required
           autoComplete="current-password"
           dir="ltr"
-          className="rounded-lg border border-black/10 bg-white px-3.5 py-2.5 text-right text-sm shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+          className={inputClass}
           placeholder="••••••••"
         />
       </div>

@@ -11,7 +11,7 @@ import {
   Activity as ActivityIcon,
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
-import { requirePartner } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { taskPriorityMeta, PROJECT_STATUSES } from "@/lib/constants";
@@ -23,7 +23,7 @@ import {
 } from "@/lib/format";
 
 export default async function DashboardPage() {
-  const user = await requirePartner();
+  const user = await requireUser();
   const today = startOfDay(new Date());
   const monthEnd = endOfMonth(today);
 
@@ -65,7 +65,10 @@ export default async function DashboardPage() {
       include: { actor: true, project: true },
     }),
     prisma.project.groupBy({ by: ["status"], _count: true }),
-    prisma.user.findMany({ orderBy: { name: "asc" } }),
+    prisma.user.findMany({
+      where: { role: "PARTNER" },
+      orderBy: { name: "asc" },
+    }),
     prisma.meeting.findMany({
       where: { startTime: { gte: new Date() } },
       orderBy: { startTime: "asc" },

@@ -1,37 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePartner } from "@/lib/auth";
-import { connectGoogleAccount } from "@/lib/google/oauth";
+import { getCurrentUser } from "@/lib/auth";
+import { calendarConnectDeps } from "@/lib/google/oauth";
+import { completeCalendarConnection } from "@/lib/google/calendar-access";
+import { OAUTH_COOKIE, OAUTH_COOKIE_OPTIONS, parseOAuthCookie } from "@/lib/oauth-state";
 
 export async function GET(request: NextRequest) {
-  const partner = await requirePartner();
-  const { searchParams } = new URL(request.url);
+  const { searchParams } = request.nextUrl;
+
+  const toSettings = (params: Record<string, string>) => {
+    const url = new URL("/settings", request.url);
+    for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+    const response = NextResponse.redirect(url);
+    response.cookies.set(OAUTH_COOKIE, "", { ...OAUTH_COOKIE_OPTIONS, maxAge: 0 });
+    return response;
+  };
+
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.redirect(new URL("/login", request.url));
+
+  // `state` must match the cookie set when THIS user started the flow -
+  // rejects forged / replayed callbacks and flows started by someone else.
+  const flow = parseOAuthCookie(request.cookies.get(OAUTH_COOKIE)?.value);
+  if (!flow || searchParams.get("state") !== flow.state || flow.userId !== user.id) {
+    return toSettings({ calendar_error: "state" });
+  }
 
   const code = searchParams.get("code");
-  const state = searchParams.get("state");
-  const error = searchParams.get("error");
-
-  if (error) {
-    return NextResponse.redirect(
-      new URL(`/calendar?google_error=${encodeURIComponent(error)}`, request.url)
-    );
+  if (searchParams.get("error") || !code) {
+    return toSettings({ calendar_error: "denied" });
   }
 
-  // The partner who started the flow must match the one finishing it -
-  // guards against a forged callback hijacking a different partner's
-  // Google connection.
-  if (!code || state !== partner.id) {
-    return NextResponse.redirect(
-      new URL("/calendar?google_error=state_mismatch", request.url)
-    );
-  }
+  const outcome = await completeCalendarConnection(
+    { code, appUser: { id: user.id, email: user.email } },
+    calendarConnectDeps
+  );
 
-  try {
-    await connectGoogleAccount(partner.id, code);
-  } catch {
-    return NextResponse.redirect(
-      new URL("/calendar?google_error=connect_failed", request.url)
-    );
+  if (!outcome.ok) {
+    if (outcome.error !== "failed" && outcome.googleEmail) {
+      console.warn(
+        `Rejected Google Calendar connection for user ${user.id}: ${outcome.error} (${outcome.googleEmail})`
+      );
+    }
+    return toSettings({
+      calendar_error: outcome.error,
+      ...(outcome.googleEmail ? { google_email: outcome.googleEmail } : {}),
+    });
   }
-
-  return NextResponse.redirect(new URL("/calendar?google_connected=1", request.url));
+  return toSettings({ calendar_connected: "1" });
 }

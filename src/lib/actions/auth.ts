@@ -2,51 +2,71 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { requirePartner, requireSession } from "@/lib/auth";
-import { SESSION_COOKIE, SESSION_MAX_AGE, signSession } from "@/lib/session";
+import { requireUser } from "@/lib/auth";
+import {
+  MIN_PASSWORD_LENGTH,
+  hashPassword,
+  verifyAgainstDummy,
+  verifyPassword,
+} from "@/lib/password";
+import { SESSION_COOKIE, SESSION_COOKIE_OPTIONS, signSession } from "@/lib/session";
+import { disconnectCalendar } from "@/lib/google/oauth";
 import type { ActionState } from "@/lib/actions/tasks";
+import { revalidatePath } from "next/cache";
 
-export type LoginState = {
-  error?: string;
-};
+export type LoginState = { error?: string; email?: string };
+
+const MAX_FAILED_LOGINS = 10;
+const LOCK_MINUTES = 15;
+const WRONG_CREDENTIALS = "אימייל או סיסמה שגויים";
 
 export async function loginAction(
-  _prevState: LoginState,
+  _prev: LoginState,
   formData: FormData
 ): Promise<LoginState> {
-  const email = String(formData.get("email") ?? "")
-    .trim()
-    .toLowerCase();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
+  if (!email || !password) return { error: "יש למלא אימייל וסיסמה", email };
 
-  if (!email || !password) {
-    return { error: "יש למלא אימייל וסיסמה" };
-  }
-
-  const credential = await prisma.credential.findUnique({ where: { email } });
-  if (!credential) {
-    return { error: "אימייל או סיסמה שגויים" };
-  }
-
-  const valid = await bcrypt.compare(password, credential.passwordHash);
-  if (!valid) {
-    return { error: "אימייל או סיסמה שגויים" };
-  }
-
-  // Signed in with the shared company login - no partner picked yet.
-  const token = await signSession({});
-  const store = await cookies();
-  store.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_MAX_AGE,
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, passwordHash: true, failedLoginCount: true, lockedUntil: true },
   });
 
-  redirect("/choose-user");
+  if (!user?.passwordHash) {
+    await verifyAgainstDummy(password);
+    return { error: WRONG_CREDENTIALS, email };
+  }
+
+  if (user.lockedUntil && user.lockedUntil > new Date()) {
+    const minutes = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60_000);
+    return {
+      error: `יותר מדי ניסיונות כניסה שגויים. נסו שוב בעוד ${minutes} דקות.`,
+      email,
+    };
+  }
+
+  if (!(await verifyPassword(password, user.passwordHash))) {
+    const failed = user.failedLoginCount + 1;
+    await prisma.user.update({
+      where: { id: user.id },
+      data:
+        failed >= MAX_FAILED_LOGINS
+          ? { failedLoginCount: 0, lockedUntil: new Date(Date.now() + LOCK_MINUTES * 60_000) }
+          : { failedLoginCount: failed },
+    });
+    return { error: WRONG_CREDENTIALS, email };
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { failedLoginCount: 0, lockedUntil: null },
+  });
+
+  const store = await cookies();
+  store.set(SESSION_COOKIE, await signSession(user.id), SESSION_COOKIE_OPTIONS);
+  redirect("/dashboard");
 }
 
 export async function logoutAction() {
@@ -55,67 +75,54 @@ export async function logoutAction() {
   redirect("/login");
 }
 
-export async function selectPartnerAction(partnerId: string) {
-  await requireSession();
-
-  const partner = await prisma.user.findUnique({ where: { id: partnerId } });
-  if (!partner) return;
-
-  const token = await signSession({ partnerId });
-  const store = await cookies();
-  store.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_MAX_AGE,
-  });
-
-  redirect("/dashboard");
-}
-
-export async function changeCredentialAction(
+/** Changes the signed-in user's own password and signs out their other devices. */
+export async function changePasswordAction(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  await requirePartner();
+  const current = await requireUser();
 
   const currentPassword = String(formData.get("currentPassword") ?? "");
-  const newEmail = String(formData.get("newEmail") ?? "")
-    .trim()
-    .toLowerCase();
   const newPassword = String(formData.get("newPassword") ?? "");
   const confirmPassword = String(formData.get("confirmPassword") ?? "");
 
-  if (!currentPassword || !newEmail) {
-    return { error: "יש למלא את הסיסמה הנוכחית ואת האימייל" };
+  if (!currentPassword || !newPassword) {
+    return { error: "יש למלא את הסיסמה הנוכחית ואת הסיסמה החדשה" };
+  }
+  if (newPassword.length < MIN_PASSWORD_LENGTH) {
+    return { error: `הסיסמה החדשה חייבת להכיל לפחות ${MIN_PASSWORD_LENGTH} תווים` };
+  }
+  if (newPassword !== confirmPassword) {
+    return { error: "אימות הסיסמה החדשה לא תואם" };
   }
 
-  // There's a single shared credential row by design.
-  const credential = await prisma.credential.findFirst();
-  if (!credential) {
-    return { error: "לא נמצא חשבון התחברות" };
-  }
-
-  const valid = await bcrypt.compare(currentPassword, credential.passwordHash);
-  if (!valid) {
+  const user = await prisma.user.findUnique({
+    where: { id: current.id },
+    select: { passwordHash: true },
+  });
+  if (!user?.passwordHash || !(await verifyPassword(currentPassword, user.passwordHash))) {
     return { error: "הסיסמה הנוכחית שגויה" };
   }
 
-  if (newPassword && newPassword !== confirmPassword) {
-    return { error: "אימות הסיסמה החדשה לא תואם" };
-  }
-  if (newPassword && newPassword.length < 8) {
-    return { error: "הסיסמה החדשה חייבת להכיל לפחות 8 תווים" };
-  }
-
-  await prisma.credential.update({
-    where: { id: credential.id },
-    data: {
-      email: newEmail,
-      ...(newPassword ? { passwordHash: await bcrypt.hash(newPassword, 10) } : {}),
-    },
+  const changedAt = new Date();
+  await prisma.user.update({
+    where: { id: current.id },
+    data: { passwordHash: await hashPassword(newPassword), passwordChangedAt: changedAt },
   });
 
+  // Every older session (other devices) is now rejected; keep this one.
+  const store = await cookies();
+  store.set(
+    SESSION_COOKIE,
+    await signSession(current.id, Math.ceil(changedAt.getTime() / 1000)),
+    SESSION_COOKIE_OPTIONS
+  );
+
   return { ok: true, ts: Date.now() };
+}
+
+export async function disconnectCalendarAction() {
+  const user = await requireUser();
+  await disconnectCalendar(user.id);
+  revalidatePath("/settings");
 }
