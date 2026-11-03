@@ -1,0 +1,36 @@
+# Backup sync of the Google calendars every 10 minutes (SPEC §2.2, decision 4).
+# Vercel Hobby allows a cron only once a day, so GitHub Actions calls the
+# protected endpoint instead. Needs the repository secret CRON_SECRET - the
+# same value as CRON_SECRET in Vercel. Can also be run by hand (Run workflow).
+# Note: GitHub may delay scheduled runs by a few minutes, and pauses them
+# after 60 days without any commit to the repository.
+name: Calendar sync
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: calendar-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Call the sync endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ vars.APP_URL || 'https://ceter-engineers.vercel.app' }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::Missing repository secret CRON_SECRET (Settings > Secrets and variables > Actions)"
+            exit 1
+          fi
+          curl --fail-with-body -sS --max-time 90 --retry 2 --retry-delay 20 \
+            -X POST -H "Authorization: Bearer $CRON_SECRET" \
+            "$APP_URL/api/cron/calendar-sync"

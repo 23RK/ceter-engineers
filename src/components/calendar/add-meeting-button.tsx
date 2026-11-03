@@ -3,15 +3,21 @@
 import { Plus } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { MeetingForm } from "@/components/calendar/meeting-form";
+import type { UserOption } from "@/lib/types";
 
 export function AddMeetingButton({
   defaultStart,
   defaultEnd,
   variant = "full",
+  partners,
+  currentUserId,
 }: {
-  defaultStart: Date;
-  defaultEnd: Date;
+  /** datetime-local values, in Israel time ("yyyy-MM-ddTHH:mm"). */
+  defaultStart: string;
+  defaultEnd: string;
   variant?: "full" | "icon";
+  partners?: UserOption[];
+  currentUserId?: string;
 }) {
   return (
     <Modal
@@ -37,6 +43,8 @@ export function AddMeetingButton({
         <MeetingForm
           defaultStart={defaultStart}
           defaultEnd={defaultEnd}
+          partners={partners}
+          currentUserId={currentUserId}
           onClose={close}
         />
       )}

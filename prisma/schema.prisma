@@ -139,6 +139,7 @@ model User {
   createdTasks  Task[]              @relation("CreatedTasks")
   activities    Activity[]
   meetings      Meeting[]
+  ownedMeetings Meeting[]           @relation("MeetingOwner")
   googleAccount GoogleAccount?
   meetingSyncs  MeetingGoogleSync[]
 
@@ -457,8 +458,30 @@ model Meeting {
   createdBy   User   @relation(fields: [createdById], references: [id])
   createdById String
 
+  // Google Calendar sync (SPEC §2.2, decision 2). The owner is the partner
+  // whose primary calendar holds the event that `googleEventId` points to.
+  // A shared meeting is ONE row: the owner invites the other partner as an
+  // attendee (`withPartner`). `googleKey` (the event's iCalUID, plus the
+  // original start for one instance of a recurring event) is the same in
+  // both partners' calendars, so the meeting is never imported twice.
+  owner             User?     @relation("MeetingOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  ownerId           String?
+  googleEventId     String?
+  googleKey         String?   @unique
+  googleUpdated     DateTime? // Google's `updated` - newer changes win
+  fromGoogle        Boolean   @default(false) // created in Google, not in the system
+  isPrivate         Boolean   @default(false) // private in Google: stored without title / details, shown as "תפוס"
+  allDay            Boolean   @default(false)
+  readOnly          Boolean   @default(false) // organized by someone else / private / all-day: edit in Google
+  withPartner       Boolean   @default(false) // the other partner is invited
+  googleSyncPending Boolean   @default(false) // still to be written to the owner's Google calendar
+  googleSyncError   String?
+
   leadTask LeadTask?
-  syncs    MeetingGoogleSync[]
+  syncs    MeetingGoogleSync[] // no longer used (decision 2); dropped later, with approval
+
+  @@unique([ownerId, googleEventId])
+  @@index([startTime])
 }
 
 // One row per partner whose Google Calendar is synced - created when they
@@ -478,6 +501,17 @@ model GoogleAccount {
   calendarId            String    @default("primary")
   lastSyncedAt          DateTime?
   createdAt             DateTime  @default(now())
+
+  // Incremental sync (events.list with syncToken) and push (events.watch).
+  syncToken         String?
+  lastFullSyncAt    DateTime?
+  syncError         String? // the last failure, in Hebrew, for Settings and the calendar
+  syncLockedUntil   DateTime? // one sync at a time per account
+  syncAgain         Boolean   @default(false) // a notification arrived during a sync
+  channelId         String?
+  channelResourceId String?
+  channelToken      String? // checked against X-Goog-Channel-Token
+  channelExpiresAt  DateTime?
 }
 
 // One row per partner whose Google Calendar a given Meeting is pushed to -
@@ -618,10 +652,15 @@ model Inspection {
   inspectorPaid   Boolean   @default(false)
   inspectorPaidAt DateTime?
 
-  notes         String?
-  googleEventId String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  notes             String?
+  // The event in Ron's / Guy's Google calendar when they are the inspector
+  // (SPEC §4.3). One-way: the system writes it, changes in Google are not read.
+  googleEventId     String?
+  googleEventUserId String? // whose calendar holds it
+  googleEventHash   String? // what was last written, to skip unchanged edits
+  googleSyncPending Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   inspector          Inspector?     @relation(fields: [inspectorId], references: [id], onDelete: SetNull)
   inspectorId        String?

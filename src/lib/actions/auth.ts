@@ -12,6 +12,7 @@ import {
 } from "@/lib/password";
 import { SESSION_COOKIE, SESSION_COOKIE_OPTIONS, signSession } from "@/lib/session";
 import { disconnectCalendar } from "@/lib/google/oauth";
+import { stopWatch } from "@/lib/google/calendar-sync";
 import type { ActionState } from "@/lib/actions/tasks";
 import { revalidatePath } from "next/cache";
 
@@ -123,6 +124,11 @@ export async function changePasswordAction(
 
 export async function disconnectCalendarAction() {
   const user = await requireUser();
+  await stopWatch(user.id);
   await disconnectCalendar(user.id);
+  // Events that came from this Google calendar leave with it; meetings
+  // created in the system stay, and are matched again after reconnecting.
+  await prisma.meeting.deleteMany({ where: { ownerId: user.id, fromGoogle: true } });
   revalidatePath("/settings");
+  revalidatePath("/calendar");
 }

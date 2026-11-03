@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
+import { runScheduledSync, syncAccount } from "@/lib/google/calendar-sync";
 import { getCurrentUser } from "@/lib/auth";
 import { blockingConfigIssues, calendarConnectDeps } from "@/lib/google/oauth";
 import { completeCalendarConnection } from "@/lib/google/calendar-access";
@@ -9,6 +10,8 @@ import { OAUTH_COOKIE, OAUTH_COOKIE_OPTIONS, parseOAuthCookie } from "@/lib/oaut
 function logFailure(userId: string | null, step: string, detail: string) {
   console.error(`[google-calendar] connect failed: user=${userId ?? "-"} step=${step} detail=${detail}`);
 }
+
+export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -76,5 +79,12 @@ export async function GET(request: NextRequest) {
     });
   }
   console.info(`[google-calendar] connected: user=${user.id}`);
+  // First full read of the calendar, then the push channel and anything
+  // waiting to be written (meetings, this partner's inspections).
+  const userId = user.id;
+  after(async () => {
+    await syncAccount(userId, { full: true });
+    await runScheduledSync({ deadline: Date.now() + 40_000 });
+  });
   return toSettings({ calendar_connected: "1" });
 }
