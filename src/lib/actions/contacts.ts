@@ -1,5 +1,6 @@
 "use server";
 
+import { withUndo } from "@/lib/undo/undo";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
@@ -26,39 +27,41 @@ export async function addProjectContact(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  await requireUser();
-  const role = formData.get("role");
-  if (!isContactRole(role)) return { error: "יש לבחור תפקיד" };
-  const roleNote = str(formData.get("roleNote"));
+  return withUndo("איש הקשר נוסף לפרויקט", async () => {
+    await requireUser();
+    const role = formData.get("role");
+    if (!isContactRole(role)) return { error: "יש לבחור תפקיד" };
+    const roleNote = str(formData.get("roleNote"));
 
-  let contactId = str(formData.get("contactId"));
-  if (contactId) {
-    const exists = await prisma.contact.findUnique({
-      where: { id: contactId },
+    let contactId = str(formData.get("contactId"));
+    if (contactId) {
+      const exists = await prisma.contact.findUnique({
+        where: { id: contactId },
+        select: { id: true },
+      });
+      if (!exists) return { error: "איש הקשר לא נמצא" };
+    } else {
+      const fields = contactFields(formData);
+      if (!fields.name) return { error: "יש לבחור איש קשר קיים או להזין שם" };
+      const contact = await prisma.contact.create({
+        data: { ...fields, name: fields.name },
+        select: { id: true },
+      });
+      contactId = contact.id;
+    }
+
+    const duplicate = await prisma.projectContact.findUnique({
+      where: { projectId_contactId_role: { projectId, contactId, role } },
       select: { id: true },
     });
-    if (!exists) return { error: "איש הקשר לא נמצא" };
-  } else {
-    const fields = contactFields(formData);
-    if (!fields.name) return { error: "יש לבחור איש קשר קיים או להזין שם" };
-    const contact = await prisma.contact.create({
-      data: { ...fields, name: fields.name },
-      select: { id: true },
+    if (duplicate) return { error: "איש הקשר כבר משויך לפרויקט בתפקיד הזה" };
+
+    await prisma.projectContact.create({
+      data: { projectId, contactId, role, roleNote },
     });
-    contactId = contact.id;
-  }
-
-  const duplicate = await prisma.projectContact.findUnique({
-    where: { projectId_contactId_role: { projectId, contactId, role } },
-    select: { id: true },
+    revalidatePath(`/projects/${projectId}`);
+    return { ok: true, ts: Date.now() };
   });
-  if (duplicate) return { error: "איש הקשר כבר משויך לפרויקט בתפקיד הזה" };
-
-  await prisma.projectContact.create({
-    data: { projectId, contactId, role, roleNote },
-  });
-  revalidatePath(`/projects/${projectId}`);
-  return { ok: true, ts: Date.now() };
 }
 
 /** Edit a contact card. It's shared, so every project that links it sees the change. */
@@ -67,24 +70,28 @@ export async function updateContact(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  await requireUser();
-  const fields = contactFields(formData);
-  if (!fields.name) return { error: "יש להזין שם" };
-  await prisma.contact.update({
-    where: { id: contactId },
-    data: { ...fields, name: fields.name },
+  return withUndo("איש הקשר עודכן", async () => {
+    await requireUser();
+    const fields = contactFields(formData);
+    if (!fields.name) return { error: "יש להזין שם" };
+    await prisma.contact.update({
+      where: { id: contactId },
+      data: { ...fields, name: fields.name },
+    });
+    revalidatePath("/projects/[id]", "page");
+    return { ok: true, ts: Date.now() };
   });
-  revalidatePath("/projects/[id]", "page");
-  return { ok: true, ts: Date.now() };
 }
 
 /** Removes the contact from this project only; the contact card itself stays. */
 export async function removeProjectContact(linkId: string): Promise<ActionState> {
-  await requireUser();
-  const link = await prisma.projectContact.delete({
-    where: { id: linkId },
-    select: { projectId: true },
+  return withUndo("איש הקשר הוסר מהפרויקט", async () => {
+    await requireUser();
+    const link = await prisma.projectContact.delete({
+      where: { id: linkId },
+      select: { projectId: true },
+    });
+    revalidatePath(`/projects/${link.projectId}`);
+    return { ok: true, ts: Date.now() };
   });
-  revalidatePath(`/projects/${link.projectId}`);
-  return { ok: true, ts: Date.now() };
 }

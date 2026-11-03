@@ -5,6 +5,7 @@ import { createTask, updateTask, type ActionState } from "@/lib/actions/tasks";
 import { TASK_PRIORITIES, TASK_STATUSES } from "@/lib/constants";
 import { toDateInputValue } from "@/lib/format";
 import type { ProjectOption, TaskWithRelations, UserOption } from "@/lib/types";
+import { useUndoToast } from "@/components/ui/toast";
 
 const initialState: ActionState = {};
 
@@ -26,6 +27,7 @@ export function TaskForm({
 }) {
   const action = task ? updateTask.bind(null, task.id) : createTask;
   const [state, formAction, pending] = useActionState(action, initialState);
+  useUndoToast(state);
 
   useEffect(() => {
     if (state.ok) onClose();

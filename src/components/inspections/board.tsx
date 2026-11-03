@@ -48,6 +48,7 @@ import {
 } from "@/lib/inspections";
 import { telHref, wazeHref, whatsappHref } from "@/lib/contacts";
 import { formatDateShort, formatMoney, toDateInputValue } from "@/lib/format";
+import { useActionResult } from "@/components/ui/toast";
 
 export type BoardSetup = Omit<FormSetup, "inspectors"> & {
   inspectors: (FormSetup["inspectors"][number] & { color: string })[];
@@ -103,6 +104,7 @@ export function InspectionsBoard({
     state.map((r) => (r.id === id ? applyInspectionPatch(r, patch, ctx) : r))
   );
   const [, startTransition] = useTransition();
+  const onResult = useActionResult();
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState(initialFilters);
   const [showFilters, setShowFilters] = useState(
@@ -117,7 +119,7 @@ export function InspectionsBoard({
     startTransition(async () => {
       apply({ id, patch });
       try {
-        const res = await updateInspection(id, patch);
+        const res = onResult(await updateInspection(id, patch));
         if (res.error) setError(res.error);
       } catch {
         setError("השינוי לא נשמר. נסו שוב.");
@@ -613,6 +615,7 @@ function PaymentCell({ row, run }: { row: InspectionRow; run: Run }) {
 
 /** Quick actions (SPEC §4.3): paid, report sent, WhatsApp, repeat inspection, Waze. */
 function RowActions({ row, setup, run }: { row: InspectionRow; setup: BoardSetup; run: Run }) {
+  const onResult = useActionResult();
   const [paying, setPaying] = useState(false);
   const [, start] = useTransition();
   const waze = wazeHref(row.address, row.city);
@@ -648,7 +651,7 @@ function RowActions({ row, setup, run }: { row: InspectionRow; setup: BoardSetup
           {
             label: "צור בדיקה חוזרת",
             icon: <Repeat size={15} />,
-            onSelect: () => start(async () => void (await createRepeatInspection(row.id))),
+            onSelect: () => start(async () => void onResult(await createRepeatInspection(row.id))),
           },
         ]}
       />

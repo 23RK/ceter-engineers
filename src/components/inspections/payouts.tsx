@@ -6,6 +6,8 @@ import type { InspectionKind } from "@prisma/client";
 import { markInspectorMonthPaid, updateInspection } from "@/lib/actions/inspections";
 import { kindLabel, monthLabel, toCsv } from "@/lib/inspections";
 import { formatDateShort, formatMoney, toDateInputValue } from "@/lib/format";
+import type { ActionState } from "@/lib/actions/tasks";
+import { useActionResult } from "@/components/ui/toast";
 
 type Row = {
   id: string;
@@ -30,13 +32,14 @@ export function Payouts({ month, inspections }: { month: string; inspections: Ro
     state.map((r) => (c.ids.includes(r.id) ? { ...r, inspectorPaid: c.paid, inspectorPaidAt: c.paid ? (r.inspectorPaidAt ?? new Date()) : null } : r))
   );
   const [, start] = useTransition();
+  const onResult = useActionResult();
   const [error, setError] = useState<string | null>(null);
-  const run = (c: Change, save: () => Promise<{ error?: string }>) => {
+  const run = (c: Change, save: () => Promise<ActionState>) => {
     setError(null);
     start(async () => {
       apply(c);
       try {
-        const res = await save();
+        const res = onResult(await save());
         if (res.error) setError(res.error);
       } catch {
         setError("השינוי לא נשמר. נסו שוב.");

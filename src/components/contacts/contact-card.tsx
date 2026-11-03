@@ -6,6 +6,7 @@ import { Modal } from "@/components/ui/modal";
 import { updateContact } from "@/lib/actions/contacts";
 import type { ActionState } from "@/lib/actions/tasks";
 import { telHref, whatsappHref } from "@/lib/contacts";
+import { useUndoToast } from "@/components/ui/toast";
 
 export type ContactInfo = {
   id: string;
@@ -80,6 +81,7 @@ function EditContactForm({ contact, onDone }: { contact: ContactInfo; onDone: ()
     updateContact.bind(null, contact.id),
     {}
   );
+  useUndoToast(state);
   useEffect(() => {
     if (state.ok) onDone();
   }, [state, onDone]);

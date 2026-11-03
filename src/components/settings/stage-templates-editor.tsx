@@ -12,6 +12,8 @@ import {
 import type { ActionState } from "@/lib/actions/tasks";
 import { DEPARTMENTS } from "@/lib/departments";
 import { sortStages } from "@/lib/stages";
+import { useActionResult } from "@/components/ui/toast";
+import { useSyncedState } from "@/lib/use-synced-state";
 
 type Template = Pick<StageTemplate, "id" | "department" | "title" | "order" | "createdAt">;
 
@@ -46,6 +48,7 @@ function applyChange(items: Template[], change: Change): Template[] {
 export function StageTemplatesEditor({ templates }: { templates: Template[] }) {
   const [items, apply] = useOptimistic(templates, applyChange);
   const [, startTransition] = useTransition();
+  const onResult = useActionResult();
   const [error, setError] = useState<string | null>(null);
   // On phones the two departments are tabs; on wider screens, side by side.
   const [tab, setTab] = useState<Department>("DEVELOPER");
@@ -55,7 +58,7 @@ export function StageTemplatesEditor({ templates }: { templates: Template[] }) {
     startTransition(async () => {
       apply(change);
       try {
-        const res = await save();
+        const res = onResult(await save());
         if (res.error) setError(res.error);
       } catch {
         setError("השינוי לא נשמר. נסו שוב.");
@@ -195,7 +198,7 @@ function TemplateRow({
   isLast: boolean;
   run: (change: Change, save: () => Promise<ActionState>) => void;
 }) {
-  const [draft, setDraft] = useState(item.title);
+  const [draft, setDraft] = useSyncedState(item.title);
   const saving = item.id.startsWith("new-");
 
   function save() {

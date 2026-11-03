@@ -7,6 +7,7 @@ import { MeetingForm } from "@/components/calendar/meeting-form";
 import { deleteMeeting } from "@/lib/actions/meetings";
 import { israelDayKey, israelTime } from "@/lib/israel-time";
 import type { MeetingWithCreator, UserOption } from "@/lib/types";
+import { useActionResult } from "@/components/ui/toast";
 
 const NEUTRAL_COLOR = "#94a3b8"; // slate-400 - unknown/no owner
 
@@ -40,6 +41,7 @@ function ownerOf(meeting: MeetingWithCreator) {
 }
 
 function MeetingChipView({ meeting, partners }: { meeting: MeetingWithCreator; partners: UserOption[] }) {
+  const onResult = useActionResult();
   const owner = ownerOf(meeting);
   const color = owner?.color ?? NEUTRAL_COLOR;
   const partner = meeting.withPartner ? partners.find((p) => p.id !== owner?.id) : undefined;
@@ -86,7 +88,7 @@ function MeetingChipView({ meeting, partners }: { meeting: MeetingWithCreator; p
             e.stopPropagation();
             if (!confirm(`למחוק את הפגישה "${meeting.title}"?${meeting.googleEventId ? " היא תימחק גם מיומן Google." : ""}`)) return;
             startTransition(async () => {
-              const res = await deleteMeeting(meeting.id);
+              const res = onResult(await deleteMeeting(meeting.id));
               if (res.error) alert(res.error);
             });
           }}

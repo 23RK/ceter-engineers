@@ -13,6 +13,7 @@ import { MeetingForm } from "@/components/calendar/meeting-form";
 import { TASK_STATUSES } from "@/lib/constants";
 import { formatDate, formatDateShort, isOverdue } from "@/lib/format";
 import type { LeadTask, Meeting, TaskStatus } from "@prisma/client";
+import { useActionResult, useUndoToast } from "@/components/ui/toast";
 
 type LeadTaskWithMeeting = LeadTask & { meeting: Meeting | null };
 
@@ -48,6 +49,7 @@ export function LeadTaskList({
 }
 
 function LeadTaskRow({ task }: { task: LeadTaskWithMeeting }) {
+  const onResult = useActionResult();
   const overdue = isOverdue(task.dueDate) && task.status !== "DONE";
 
   return (
@@ -114,7 +116,7 @@ function LeadTaskRow({ task }: { task: LeadTaskWithMeeting }) {
         <select
           value={task.status}
           onChange={(e) =>
-            setLeadTaskStatus(task.id, e.target.value as TaskStatus)
+            void setLeadTaskStatus(task.id, e.target.value as TaskStatus).then(onResult)
           }
           className="rounded-lg border border-black/10 bg-white px-2.5 py-1.5 text-xs shadow-sm outline-none focus:border-brand-500"
         >
@@ -127,7 +129,7 @@ function LeadTaskRow({ task }: { task: LeadTaskWithMeeting }) {
         <button
           onClick={() => {
             if (confirm(`למחוק את המשימה "${task.title}"?`)) {
-              deleteLeadTask(task.id);
+              void deleteLeadTask(task.id).then(onResult);
             }
           }}
           className="rounded-md p-1.5 text-black/20 transition hover:bg-red-50 hover:text-red-600"
@@ -144,6 +146,7 @@ const initialState: ActionState = {};
 function LeadTaskForm({ leadId }: { leadId: string }) {
   const action = createLeadTask.bind(null, leadId);
   const [state, formAction, pending] = useActionState(action, initialState);
+  useUndoToast(state);
 
   return (
     <form

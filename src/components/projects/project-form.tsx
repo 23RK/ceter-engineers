@@ -12,6 +12,7 @@ import { formatDateShort, toDateInputValue } from "@/lib/format";
 import { spreadDueDates } from "@/lib/stages";
 import type { Department, Project } from "@prisma/client";
 import type { UserOption } from "@/lib/types";
+import { useUndoToast } from "@/components/ui/toast";
 
 const initialState: ActionState = {};
 
@@ -43,6 +44,7 @@ export function ProjectForm({
     ? updateProject.bind(null, project.id)
     : createProject;
   const [state, formAction, pending] = useActionState(action, initialState);
+  useUndoToast(state);
 
   useEffect(() => {
     if (state.ok) onClose();

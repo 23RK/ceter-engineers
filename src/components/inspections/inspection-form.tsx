@@ -14,6 +14,7 @@ import {
   type RateRow,
 } from "@/lib/inspections";
 import { formatDateShort, formatMoney, toDateInputValue } from "@/lib/format";
+import { useUndoToast } from "@/components/ui/toast";
 
 export type FormSetup = {
   inspectors: { id: string; name: string; active: boolean; employmentType: EmploymentType }[];
@@ -50,6 +51,7 @@ export function InspectionForm({
   onDone: () => void;
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createInspection, {});
+  useUndoToast(state);
   const [inspectorId, setInspectorId] = useState("");
   const [typeId, setTypeId] = useState("");
   const [units, setUnits] = useState(1);

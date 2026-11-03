@@ -4,6 +4,7 @@ import { useActionState, useEffect } from "react";
 import { createLead, updateLead, type ActionState } from "@/lib/actions/leads";
 import { LEAD_STATUSES } from "@/lib/constants";
 import type { Lead } from "@prisma/client";
+import { useUndoToast } from "@/components/ui/toast";
 
 const initialState: ActionState = {};
 
@@ -19,6 +20,7 @@ export function LeadForm({
 }) {
   const action = lead ? updateLead.bind(null, lead.id) : createLead;
   const [state, formAction, pending] = useActionState(action, initialState);
+  useUndoToast(state);
 
   useEffect(() => {
     if (state.ok) onClose();

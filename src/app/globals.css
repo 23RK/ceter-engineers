@@ -65,3 +65,9 @@ body {
 .animate-fade-in {
   animation: fade-in 0.15s ease-out;
 }
+
+/* The "בטל" toast's 8-second countdown bar (src/components/ui/toast.tsx). */
+@keyframes toast-countdown {
+  from { width: 100%; }
+  to { width: 0%; }
+}

@@ -7,6 +7,7 @@ import { LogoutButton } from "@/components/logout-button";
 import { Logo } from "@/components/logo";
 import { NotificationBell } from "@/components/notification-bell";
 import { prisma } from "@/lib/prisma";
+import { ToastProvider } from "@/components/ui/toast";
 
 export default async function AppLayout({
   children,
@@ -19,6 +20,7 @@ export default async function AppLayout({
   });
 
   return (
+    <ToastProvider>
     <div className="min-h-screen bg-background md:flex">
       {/* Sidebar - desktop */}
       <aside className="hidden w-64 shrink-0 flex-col overflow-y-auto bg-brand-950 px-4 py-6 md:sticky md:top-0 md:flex md:h-screen">
@@ -87,5 +89,6 @@ export default async function AppLayout({
         </main>
       </div>
     </div>
+    </ToastProvider>
   );
 }

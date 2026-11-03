@@ -497,6 +497,17 @@ export async function syncInspectionEvent(inspectionId: string): Promise<"ok" | 
   }
 }
 
+/** Removes an inspection's event (its inspection was undone). Best-effort. */
+export async function removeInspectionEvent(userId: string, eventId: string) {
+  const g = await calendarFor(userId);
+  if (!g) return;
+  try {
+    await g.cal.events.delete({ calendarId: "primary", eventId, sendUpdates: "none" });
+  } catch (e) {
+    if (!isGone(e)) logError(`remove inspection event failed user=${userId}`, e);
+  }
+}
+
 /** Never lets a Google problem break saving in the system. */
 export async function syncInspectionEventSafely(inspectionId: string) {
   try {

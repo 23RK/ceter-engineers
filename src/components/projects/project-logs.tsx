@@ -13,6 +13,8 @@ import {
 import type { ActionState } from "@/lib/actions/tasks";
 import { formatMoney, toDateInputValue } from "@/lib/format";
 import type { UserOption } from "@/lib/types";
+import { useActionResult, useUndoToast } from "@/components/ui/toast";
+import { useSyncedState } from "@/lib/use-synced-state";
 
 const control =
   "min-h-9 rounded-lg border border-transparent bg-black/[0.03] px-2 text-sm outline-none focus:border-brand-400 focus:bg-white";
@@ -22,12 +24,13 @@ const input =
 /** Run a save in the background; show an error if it fails. */
 function useSaver() {
   const [pending, start] = useTransition();
+  const onResult = useActionResult();
   const [error, setError] = useState<string | null>(null);
   const save = (fn: () => Promise<ActionState>) =>
     start(async () => {
       setError(null);
       try {
-        const res = await fn();
+        const res = onResult(await fn());
         if (res.error) setError(res.error);
       } catch {
         setError("השינוי לא נשמר. נסו שוב.");
@@ -42,7 +45,7 @@ function BlurInput({
   onSave,
   ...rest
 }: { value: string; onSave: (v: string) => void } & Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
-  const [v, setV] = useState(value);
+  const [v, setV] = useSyncedState(value);
   return (
     <input
       {...rest}
@@ -87,6 +90,7 @@ export function SupervisionReports({
     createSupervisionReport.bind(null, projectId),
     {}
   );
+  useUndoToast(state);
   const ref = useResetOnSuccess(state);
   const [other, setOther] = useState(users.length === 0);
   const notSent = reports.filter((r) => !r.reportSent).length;
@@ -164,7 +168,7 @@ export function SupervisionReports({
 
 function ReportRow({ report, users }: { report: ReportInfo; users: UserOption[] }) {
   const { pending, error, save } = useSaver();
-  const [sent, setSent] = useState(report.reportSent);
+  const [sent, setSent] = useSyncedState(report.reportSent);
   const patch = (p: Parameters<typeof updateSupervisionReport>[1]) =>
     save(() => updateSupervisionReport(report.id, p));
 
@@ -259,6 +263,7 @@ export function ChangeOrders({ projectId, changes }: { projectId: string; change
     createChangeOrder.bind(null, projectId),
     {}
   );
+  useUndoToast(state);
   const ref = useResetOnSuccess(state);
   const total = changes.reduce((s, c) => s + (c.cost ?? 0), 0);
   const approved = changes.filter((c) => c.clientApproved).reduce((s, c) => s + (c.cost ?? 0), 0);
@@ -311,7 +316,7 @@ export function ChangeOrders({ projectId, changes }: { projectId: string; change
 
 function ChangeRow({ change }: { change: ChangeInfo }) {
   const { pending, error, save } = useSaver();
-  const [approved, setApproved] = useState(change.clientApproved);
+  const [approved, setApproved] = useSyncedState(change.clientApproved);
   const patch = (p: Parameters<typeof updateChangeOrder>[1]) => save(() => updateChangeOrder(change.id, p));
   return (
     <li className={`flex flex-col gap-2 px-4 py-3 lg:flex-row lg:items-center ${pending ? "opacity-60" : ""}`}>

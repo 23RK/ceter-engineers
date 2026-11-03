@@ -3,11 +3,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { env } from "@/lib/google/env";
 import { runScheduledSync } from "@/lib/google/calendar-sync";
+import { purgeExpired } from "@/lib/undo/undo";
 
 // The 10-minute backup sync (decision 4): called by the scheduled GitHub
 // Actions workflow (.github/workflows/calendar-sync.yml) with
 // "Authorization: Bearer <CRON_SECRET>". Renews the push channels, catches
 // up on missed notifications, and retries writes to Google that failed.
+// Also empties recycle-bin items older than 30 days.
 
 export const maxDuration = 60;
 
@@ -28,10 +30,12 @@ async function handle(request: NextRequest) {
 
   const started = Date.now();
   const summary = await runScheduledSync({ deadline: started + 45_000 });
+  // The recycle bin keeps deleted items for 30 days (stage 5b).
+  const purged = await purgeExpired().catch(() => null);
   revalidatePath("/calendar");
   revalidatePath("/dashboard");
   console.info(`[google-calendar] cron ${JSON.stringify(summary)} in ${Date.now() - started}ms`);
-  return NextResponse.json({ ok: true, ...summary, ms: Date.now() - started });
+  return NextResponse.json({ ok: true, ...summary, purged, ms: Date.now() - started });
 }
 
 export const GET = handle;

@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   KeyRound,
   LayoutList,
+  Trash2,
 } from "lucide-react";
 import { ROLE_LABELS, requireUser } from "@/lib/auth";
 import { getCalendarConnection, isGoogleConfigured } from "@/lib/google/oauth";
@@ -187,6 +188,24 @@ export default async function SettingsPage({
           </span>
           <span className="block text-xs text-black/50">
             בודקים, סוגי נכס, מחירון, תעריפים ומע&quot;מ
+          </span>
+        </span>
+        <ChevronLeft size={18} className="shrink-0 text-black/30" />
+      </Link>
+
+      <Link
+        href="/settings/trash"
+        className="flex max-w-lg items-center gap-3 rounded-2xl border border-black/5 bg-white p-5 shadow-sm transition hover:border-brand-200 hover:shadow-md"
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+          <Trash2 size={18} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold text-brand-900">
+            סל מחזור
+          </span>
+          <span className="block text-xs text-black/50">
+            מה שנמחק ב-30 הימים האחרונים, עם שחזור
           </span>
         </span>
         <ChevronLeft size={18} className="shrink-0 text-black/30" />

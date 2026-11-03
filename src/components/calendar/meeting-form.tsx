@@ -10,6 +10,7 @@ import {
 import { toIsraelDateTimeInput } from "@/lib/israel-time";
 import type { Meeting } from "@prisma/client";
 import type { UserOption } from "@/lib/types";
+import { useUndoToast } from "@/components/ui/toast";
 
 const initialState: ActionState = {};
 
@@ -43,6 +44,7 @@ export function MeetingForm({
       ? createMeetingForLeadTask.bind(null, forLeadTaskId)
       : createMeeting;
   const [state, formAction, pending] = useActionState(action, initialState);
+  useUndoToast(state);
 
   useEffect(() => {
     if (state.ok) onClose();

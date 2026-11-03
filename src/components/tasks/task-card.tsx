@@ -7,6 +7,7 @@ import { formatDateShort, isOverdue } from "@/lib/format";
 import type { ProjectOption, TaskWithRelations, UserOption } from "@/lib/types";
 import { Modal } from "@/components/ui/modal";
 import { TaskForm } from "@/components/tasks/task-form";
+import { useActionResult } from "@/components/ui/toast";
 
 export function TaskCard({
   task,
@@ -35,6 +36,7 @@ export function TaskCard({
 }
 
 function TaskCardView({ task }: { task: TaskWithRelations }) {
+  const onResult = useActionResult();
   const priority = taskPriorityMeta(task.priority);
   const overdue = isOverdue(task.dueDate) && task.status !== "DONE";
 
@@ -56,7 +58,7 @@ function TaskCardView({ task }: { task: TaskWithRelations }) {
           onClick={(e) => {
             e.stopPropagation();
             if (confirm(`למחוק את המשימה "${task.title}"?`)) {
-              deleteTask(task.id);
+              void deleteTask(task.id).then(onResult);
             }
           }}
           className="shrink-0 rounded-md p-1 text-black/20 opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"

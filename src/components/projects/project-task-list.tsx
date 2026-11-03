@@ -9,6 +9,8 @@ import { deleteTask, patchTask } from "@/lib/actions/tasks";
 import { TASK_STATUSES, taskPriorityMeta, taskStatusMeta } from "@/lib/constants";
 import { isOverdue, toDateInputValue } from "@/lib/format";
 import type { ProjectOption, TaskWithRelations, UserOption } from "@/lib/types";
+import type { ActionState } from "@/lib/actions/tasks";
+import { useActionResult } from "@/components/ui/toast";
 
 type Patch = { status?: TaskStatus; assigneeId?: string | null; dueDate?: string | null };
 type Change = { id: string; patch: Patch } | { id: string; remove: true };
@@ -59,6 +61,7 @@ export function ProjectTaskList({
         })
   );
   const [, startTransition] = useTransition();
+  const onResult = useActionResult();
   const [error, setError] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(false);
 
@@ -67,7 +70,7 @@ export function ProjectTaskList({
     startTransition(async () => {
       apply(change);
       try {
-        const res = (await save()) as { error?: string } | undefined;
+        const res = onResult((await save()) as ActionState | undefined);
         if (res?.error) setError(res.error);
       } catch {
         setError("השינוי לא נשמר. נסו שוב.");

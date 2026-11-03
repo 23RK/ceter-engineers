@@ -8,8 +8,10 @@ import { deleteLead } from "@/lib/actions/leads";
 import { leadStatusMeta } from "@/lib/constants";
 import { formatDate } from "@/lib/format";
 import type { Lead } from "@prisma/client";
+import { useActionResult } from "@/components/ui/toast";
 
 export function LeadHeader({ lead }: { lead: Lead }) {
+  const onResult = useActionResult();
   const status = leadStatusMeta(lead.status);
 
   return (
@@ -49,7 +51,7 @@ export function LeadHeader({ lead }: { lead: Lead }) {
                   `למחוק את ההזדמנות "${lead.name}"? פעולה זו תמחק גם את כל המשימות המשויכות.`
                 )
               ) {
-                deleteLead(lead.id);
+                void deleteLead(lead.id).then(onResult);
               }
             }}
             className="flex items-center gap-1.5 rounded-lg border border-black/10 px-3.5 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50"

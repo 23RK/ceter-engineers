@@ -1,5 +1,6 @@
 "use server";
 
+import { untracked, withUndo } from "@/lib/undo/undo";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { syncInspectionEventSafely } from "@/lib/google/calendar-sync";
@@ -33,7 +34,7 @@ function revalidate() {
  * after the response so editing stays fast. Unchanged events aren't rewritten.
  */
 function writeToGoogleLater(inspectionId: string) {
-  after(() => syncInspectionEventSafely(inspectionId));
+  after(() => untracked(() => syncInspectionEventSafely(inspectionId)));
 }
 
 async function pricingContext(): Promise<PricingContext> {
@@ -88,52 +89,54 @@ export async function createInspection(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const user = await requireUser();
-  const clientName = str(formData.get("clientName"));
-  if (!clientName) return { error: "יש להזין שם לקוח" };
-  const kind = formData.get("kind") ?? "REGULAR";
-  if (!isInspectionKind(kind)) return { error: "סוג בדיקה לא חוקי" };
-  const time = str(formData.get("time"));
-  if (time && !TIME.test(time)) return { error: "שעה לא חוקית" };
-  const unitsCount = Math.max(1, Math.round(num(formData.get("unitsCount")) ?? 1));
-  const inspectorId = str(formData.get("inspectorId"));
-  const apartmentTypeId = str(formData.get("apartmentTypeId"));
-  const priceIn = num(formData.get("price"));
-  const payIn = num(formData.get("inspectorPay"));
-  if (priceIn === undefined || payIn === undefined) return { error: "סכום לא חוקי" };
+  return withUndo("הבדיקה נוספה", async () => {
+    const user = await requireUser();
+    const clientName = str(formData.get("clientName"));
+    if (!clientName) return { error: "יש להזין שם לקוח" };
+    const kind = formData.get("kind") ?? "REGULAR";
+    if (!isInspectionKind(kind)) return { error: "סוג בדיקה לא חוקי" };
+    const time = str(formData.get("time"));
+    if (time && !TIME.test(time)) return { error: "שעה לא חוקית" };
+    const unitsCount = Math.max(1, Math.round(num(formData.get("unitsCount")) ?? 1));
+    const inspectorId = str(formData.get("inspectorId"));
+    const apartmentTypeId = str(formData.get("apartmentTypeId"));
+    const priceIn = num(formData.get("price"));
+    const payIn = num(formData.get("inspectorPay"));
+    if (priceIn === undefined || payIn === undefined) return { error: "סכום לא חוקי" };
 
-  const ctx = await pricingContext();
-  const inspector = ctx.inspectors.find((i) => i.id === inspectorId) ?? null;
-  if (inspectorId && !inspector) return { error: "בודק לא חוקי" };
-  const d = date(formData.get("date"));
-  const parentInspectionId = str(formData.get("parentInspectionId"));
+    const ctx = await pricingContext();
+    const inspector = ctx.inspectors.find((i) => i.id === inspectorId) ?? null;
+    if (inspectorId && !inspector) return { error: "בודק לא חוקי" };
+    const d = date(formData.get("date"));
+    const parentInspectionId = str(formData.get("parentInspectionId"));
 
-  const created = await prisma.inspection.create({
-    data: {
-      clientName,
-      clientPhone: str(formData.get("clientPhone")),
-      clientEmail: str(formData.get("clientEmail")),
-      date: d,
-      time,
-      kind,
-      unitsCount,
-      inspectorId,
-      apartmentTypeId,
-      city: str(formData.get("city")),
-      address: str(formData.get("address")),
-      apartmentNumber: str(formData.get("apartmentNumber")),
-      developerContractor: str(formData.get("developerContractor")),
-      notes: str(formData.get("notes")),
-      price: priceIn ?? clientPriceFor(ctx.tiers, apartmentTypeId, kind, unitsCount),
-      inspectorPay: payIn ?? inspectorPayFor(ctx.rates, inspector, apartmentTypeId, kind, unitsCount),
-      status: scheduleStatus("PENDING_SCHEDULING", d, inspectorId),
-      parentInspectionId,
-      createdById: user.id,
-    },
+    const created = await prisma.inspection.create({
+      data: {
+        clientName,
+        clientPhone: str(formData.get("clientPhone")),
+        clientEmail: str(formData.get("clientEmail")),
+        date: d,
+        time,
+        kind,
+        unitsCount,
+        inspectorId,
+        apartmentTypeId,
+        city: str(formData.get("city")),
+        address: str(formData.get("address")),
+        apartmentNumber: str(formData.get("apartmentNumber")),
+        developerContractor: str(formData.get("developerContractor")),
+        notes: str(formData.get("notes")),
+        price: priceIn ?? clientPriceFor(ctx.tiers, apartmentTypeId, kind, unitsCount),
+        inspectorPay: payIn ?? inspectorPayFor(ctx.rates, inspector, apartmentTypeId, kind, unitsCount),
+        status: scheduleStatus("PENDING_SCHEDULING", d, inspectorId),
+        parentInspectionId,
+        createdById: user.id,
+      },
+    });
+    writeToGoogleLater(created.id);
+    revalidate();
+    return { ok: true, ts: Date.now() };
   });
-  writeToGoogleLater(created.id);
-  revalidate();
-  return { ok: true, ts: Date.now() };
 }
 
 /** Inline edit (SPEC §4.3), with the automatic rules of applyInspectionPatch. */
@@ -141,68 +144,72 @@ export async function updateInspection(
   inspectionId: string,
   patch: InspectionPatch
 ): Promise<ActionState> {
-  await requireUser();
-  // Validate the closed lists; the rest is cleaned by applyInspectionPatch.
-  if (patch.status !== undefined && !isInspectionStatus(patch.status)) return { error: "סטטוס לא חוקי" };
-  if (patch.paymentStatus !== undefined && !isPaymentStatus(patch.paymentStatus)) return { error: "סטטוס תשלום לא חוקי" };
-  if (patch.paymentMethod != null && !isPaymentMethod(patch.paymentMethod)) return { error: "אמצעי תשלום לא חוקי" };
-  if (patch.kind !== undefined && !isInspectionKind(patch.kind)) return { error: "סוג בדיקה לא חוקי" };
-  if (patch.time && !TIME.test(patch.time)) return { error: "שעה לא חוקית" };
-  if ("clientName" in patch && !patch.clientName?.trim()) return { error: "יש להזין שם לקוח" };
-  for (const k of ["price", "inspectorPay", "amountPaid"] as const) {
-    const v = patch[k];
-    if (v != null && (!Number.isFinite(v) || v < 0)) return { error: "סכום לא חוקי" };
-  }
+  return withUndo("הבדיקה עודכנה", async () => {
+    await requireUser();
+    // Validate the closed lists; the rest is cleaned by applyInspectionPatch.
+    if (patch.status !== undefined && !isInspectionStatus(patch.status)) return { error: "סטטוס לא חוקי" };
+    if (patch.paymentStatus !== undefined && !isPaymentStatus(patch.paymentStatus)) return { error: "סטטוס תשלום לא חוקי" };
+    if (patch.paymentMethod != null && !isPaymentMethod(patch.paymentMethod)) return { error: "אמצעי תשלום לא חוקי" };
+    if (patch.kind !== undefined && !isInspectionKind(patch.kind)) return { error: "סוג בדיקה לא חוקי" };
+    if (patch.time && !TIME.test(patch.time)) return { error: "שעה לא חוקית" };
+    if ("clientName" in patch && !patch.clientName?.trim()) return { error: "יש להזין שם לקוח" };
+    for (const k of ["price", "inspectorPay", "amountPaid"] as const) {
+      const v = patch[k];
+      if (v != null && (!Number.isFinite(v) || v < 0)) return { error: "סכום לא חוקי" };
+    }
 
-  const [row, ctx] = await Promise.all([
-    prisma.inspection.findUnique({ where: { id: inspectionId }, select: ROW_SELECT }),
-    pricingContext(),
-  ]);
-  if (!row) return { error: "הבדיקה לא נמצאה" };
-  if (patch.inspectorId && !ctx.inspectors.some((i) => i.id === patch.inspectorId)) {
-    return { error: "בודק לא חוקי" };
-  }
+    const [row, ctx] = await Promise.all([
+      prisma.inspection.findUnique({ where: { id: inspectionId }, select: ROW_SELECT }),
+      pricingContext(),
+    ]);
+    if (!row) return { error: "הבדיקה לא נמצאה" };
+    if (patch.inspectorId && !ctx.inspectors.some((i) => i.id === patch.inspectorId)) {
+      return { error: "בודק לא חוקי" };
+    }
 
-  const next: InspectionRow = applyInspectionPatch(row, patch, ctx);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { id, createdAt, parentInspectionId, ...data } = next;
-  await prisma.inspection.update({ where: { id: inspectionId }, data });
-  writeToGoogleLater(inspectionId);
-  revalidate();
-  return { ok: true, ts: Date.now() };
+    const next: InspectionRow = applyInspectionPatch(row, patch, ctx);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { id, createdAt, parentInspectionId, ...data } = next;
+    await prisma.inspection.update({ where: { id: inspectionId }, data });
+    writeToGoogleLater(inspectionId);
+    revalidate();
+    return { ok: true, ts: Date.now() };
+  });
 }
 
 /** "צור בדיקה חוזרת": same client and property, linked to the original. */
 export async function createRepeatInspection(parentId: string): Promise<ActionState> {
-  const user = await requireUser();
-  const [parent, ctx] = await Promise.all([
-    prisma.inspection.findUnique({ where: { id: parentId } }),
-    pricingContext(),
-  ]);
-  if (!parent) return { error: "הבדיקה המקורית לא נמצאה" };
-  const inspector = ctx.inspectors.find((i) => i.id === parent.inspectorId) ?? null;
-  await prisma.inspection.create({
-    data: {
-      kind: "REPEAT",
-      parentInspectionId: parent.id,
-      clientName: parent.clientName,
-      clientPhone: parent.clientPhone,
-      clientEmail: parent.clientEmail,
-      city: parent.city,
-      address: parent.address,
-      apartmentNumber: parent.apartmentNumber,
-      developerContractor: parent.developerContractor,
-      apartmentTypeId: parent.apartmentTypeId,
-      unitsCount: parent.unitsCount,
-      inspectorId: parent.inspectorId,
-      inspectorPay: inspectorPayFor(ctx.rates, inspector, parent.apartmentTypeId, "REPEAT", parent.unitsCount),
-      price: null, // a repeat inspection is priced by hand
-      status: "PENDING_SCHEDULING",
-      createdById: user.id,
-    },
+  return withUndo("נוצרה בדיקה חוזרת", async () => {
+    const user = await requireUser();
+    const [parent, ctx] = await Promise.all([
+      prisma.inspection.findUnique({ where: { id: parentId } }),
+      pricingContext(),
+    ]);
+    if (!parent) return { error: "הבדיקה המקורית לא נמצאה" };
+    const inspector = ctx.inspectors.find((i) => i.id === parent.inspectorId) ?? null;
+    await prisma.inspection.create({
+      data: {
+        kind: "REPEAT",
+        parentInspectionId: parent.id,
+        clientName: parent.clientName,
+        clientPhone: parent.clientPhone,
+        clientEmail: parent.clientEmail,
+        city: parent.city,
+        address: parent.address,
+        apartmentNumber: parent.apartmentNumber,
+        developerContractor: parent.developerContractor,
+        apartmentTypeId: parent.apartmentTypeId,
+        unitsCount: parent.unitsCount,
+        inspectorId: parent.inspectorId,
+        inspectorPay: inspectorPayFor(ctx.rates, inspector, parent.apartmentTypeId, "REPEAT", parent.unitsCount),
+        price: null, // a repeat inspection is priced by hand
+        status: "PENDING_SCHEDULING",
+        createdById: user.id,
+      },
+    });
+    revalidate();
+    return { ok: true, ts: Date.now() };
   });
-  revalidate();
-  return { ok: true, ts: Date.now() };
 }
 
 const digits = (s: string) => s.replace(/\D/g, "").replace(/^972/, "0");
@@ -229,19 +236,21 @@ export async function lookupClient(
 
 /** "סמן הכל כשולם" for one inspector and month (SPEC §4.3, inspector payments). */
 export async function markInspectorMonthPaid(inspectorId: string, month: string): Promise<ActionState> {
-  await requireUser();
-  const [y, m] = month.split("-").map(Number);
-  if (!y || !m) return { error: "חודש לא חוקי" };
-  const { count } = await prisma.inspection.updateMany({
-    where: {
-      inspectorId,
-      inspectorPaid: false,
-      status: { in: ["DONE", "REPORT_SENT", "COMPLETED"] },
-      date: { gte: new Date(Date.UTC(y, m - 1, 1)), lt: new Date(Date.UTC(y, m, 1)) },
-      inspector: { employmentType: { not: "OWNER" } },
-    },
-    data: { inspectorPaid: true, inspectorPaidAt: israelToday() },
+  return withUndo("סומן כשולם לבודק", async () => {
+    await requireUser();
+    const [y, m] = month.split("-").map(Number);
+    if (!y || !m) return { error: "חודש לא חוקי" };
+    const { count } = await prisma.inspection.updateMany({
+      where: {
+        inspectorId,
+        inspectorPaid: false,
+        status: { in: ["DONE", "REPORT_SENT", "COMPLETED"] },
+        date: { gte: new Date(Date.UTC(y, m - 1, 1)), lt: new Date(Date.UTC(y, m, 1)) },
+        inspector: { employmentType: { not: "OWNER" } },
+      },
+      data: { inspectorPaid: true, inspectorPaidAt: israelToday() },
+    });
+    revalidate();
+    return count ? { ok: true, ts: Date.now() } : { error: "אין בדיקות פתוחות לתשלום בחודש הזה" };
   });
-  revalidate();
-  return count ? { ok: true, ts: Date.now() } : { error: "אין בדיקות פתוחות לתשלום בחודש הזה" };
 }

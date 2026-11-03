@@ -10,6 +10,7 @@ import { TaskForm } from "@/components/tasks/task-form";
 import { setTaskStatus } from "@/lib/actions/tasks";
 import { TASK_PRIORITIES, TASK_STATUSES } from "@/lib/constants";
 import type { ProjectOption, TaskWithRelations, UserOption } from "@/lib/types";
+import { useActionResult } from "@/components/ui/toast";
 
 export function TasksClient({
   tasks,
@@ -22,6 +23,7 @@ export function TasksClient({
   projects: ProjectOption[];
   currentUserId: string;
 }) {
+  const onResult = useActionResult();
   // "המשימות שלי": starts on the signed-in partner's tasks; "כל האחראים"
   // shows the whole shared board.
   const [assigneeFilter, setAssigneeFilter] = useState(currentUserId);
@@ -47,7 +49,7 @@ export function TasksClient({
   function handleDrop(taskId: string, status: TaskStatus) {
     startTransition(async () => {
       moveTask({ taskId, status });
-      await setTaskStatus(taskId, status);
+      onResult(await setTaskStatus(taskId, status));
     });
   }
 

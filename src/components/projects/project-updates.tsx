@@ -7,6 +7,7 @@ import type { ActionState } from "@/lib/actions/tasks";
 import { MAX_UPLOAD_BYTES, formatBytes } from "@/lib/form-values";
 import { FileChip, type FileInfo } from "@/components/projects/project-documents";
 import type { UserOption } from "@/lib/types";
+import { useActionResult, useUndoToast } from "@/components/ui/toast";
 
 export type UpdateInfo = {
   id: string;
@@ -42,6 +43,7 @@ export function ProjectUpdates({
     createUpdate.bind(null, projectId),
     {}
   );
+  useUndoToast(state);
   const formRef = useRef<HTMLFormElement>(null);
   // Picked file names, shown until the update that carried them is saved.
   const [picked, setPicked] = useState<{ names: string[]; at: number }>({ names: [], at: 0 });
@@ -134,6 +136,7 @@ export function ProjectUpdates({
 }
 
 function UpdateItem({ update, canDelete }: { update: UpdateInfo; canDelete: boolean }) {
+  const onResult = useActionResult();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   return (
@@ -160,7 +163,7 @@ function UpdateItem({ update, canDelete }: { update: UpdateInfo; canDelete: bool
             onClick={() => {
               if (!confirm("למחוק את העדכון? גם הקבצים שצורפו אליו יימחקו.")) return;
               start(async () => {
-                const res = await deleteUpdate(update.id);
+                const res = onResult(await deleteUpdate(update.id));
                 if (res.error) setError(res.error);
               });
             }}

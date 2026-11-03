@@ -13,6 +13,7 @@ import {
 import { addProjectContact, removeProjectContact } from "@/lib/actions/contacts";
 import type { ActionState } from "@/lib/actions/tasks";
 import { CONTACT_ROLES, contactRoleLabel } from "@/lib/contacts";
+import { useActionResult, useUndoToast } from "@/components/ui/toast";
 
 export type ProjectContactInfo = {
   id: string;
@@ -92,6 +93,7 @@ export function ProjectContacts({
 }
 
 function ContactRow({ link }: { link: ProjectContactInfo }) {
+  const onResult = useActionResult();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const c = link.contact;
@@ -122,7 +124,7 @@ function ContactRow({ link }: { link: ProjectContactInfo }) {
         onClick={() => {
           if (!confirm(`להסיר את ${c.name} מהפרויקט? כרטיס איש הקשר עצמו נשאר.`)) return;
           start(async () => {
-            const res = await removeProjectContact(link.id);
+            const res = onResult(await removeProjectContact(link.id));
             if (res.error) setError(res.error);
           });
         }}
@@ -155,6 +157,7 @@ function AddContactForm({
     addProjectContact.bind(null, projectId),
     {}
   );
+  useUndoToast(state);
   const [mode, setMode] = useState<"existing" | "new">(allContacts.length > 0 && !defaultName ? "existing" : "new");
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState("");

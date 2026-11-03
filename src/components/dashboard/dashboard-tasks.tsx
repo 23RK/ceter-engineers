@@ -9,6 +9,7 @@ import { postponedDate, splitDeadlines, UPCOMING_DAYS } from "@/lib/dashboard";
 import { taskPriorityMeta } from "@/lib/constants";
 import { formatDateShort, toDateInputValue } from "@/lib/format";
 import type { UserOption } from "@/lib/types";
+import { useActionResult } from "@/components/ui/toast";
 
 export type DashboardTask = {
   id: string;
@@ -51,6 +52,7 @@ export function DashboardTasks({
     )
   );
   const [, startTransition] = useTransition();
+  const onResult = useActionResult();
   const [error, setError] = useState<string | null>(null);
 
   function run(id: string, patch: Patch) {
@@ -58,7 +60,7 @@ export function DashboardTasks({
     startTransition(async () => {
       apply({ id, patch });
       try {
-        const res = await patchTask(id, patch);
+        const res = onResult(await patchTask(id, patch));
         if (res.error) setError(res.error);
       } catch {
         setError("השינוי לא נשמר. נסו שוב.");

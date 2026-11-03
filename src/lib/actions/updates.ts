@@ -1,5 +1,6 @@
 "use server";
 
+import { withUndo } from "@/lib/undo/undo";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -40,84 +41,88 @@ export async function createUpdate(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const user = await requireUser();
-  const body = str(formData.get("body"));
-  const files = filesOf(formData);
-  if (!body && files.length === 0) return { error: "יש לכתוב עדכון או לצרף קובץ" };
-  const tooBig = checkFiles(files);
-  if (tooBig) return { error: tooBig };
+  return withUndo("העדכון פורסם", async () => {
+    const user = await requireUser();
+    const body = str(formData.get("body"));
+    const files = filesOf(formData);
+    if (!body && files.length === 0) return { error: "יש לכתוב עדכון או לצרף קובץ" };
+    const tooBig = checkFiles(files);
+    if (tooBig) return { error: tooBig };
 
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    select: { name: true },
-  });
-  if (!project) return { error: "הפרויקט לא נמצא" };
-
-  // Only partners can be tagged, and not yourself.
-  const taggedIds = formData.getAll("tag").map(String);
-  const tagged = taggedIds.length
-    ? await prisma.user.findMany({
-        where: { id: { in: taggedIds, not: user.id }, role: "PARTNER" },
-        select: { id: true },
-      })
-    : [];
-
-  const rows = await fileRows(files);
-  await prisma.$transaction(async (tx) => {
-    const update = await tx.projectUpdate.create({
-      data: { projectId, authorId: user.id, body: body ?? "" },
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { name: true },
     });
-    for (const f of rows) {
-      await tx.projectFile.create({
-        data: {
-          projectId,
-          updateId: update.id,
-          uploadedById: user.id,
-          name: f.name,
-          mimeType: f.mimeType,
-          size: f.size,
-          data: { create: { data: f.bytes } },
-        },
+    if (!project) return { error: "הפרויקט לא נמצא" };
+
+    // Only partners can be tagged, and not yourself.
+    const taggedIds = formData.getAll("tag").map(String);
+    const tagged = taggedIds.length
+      ? await prisma.user.findMany({
+          where: { id: { in: taggedIds, not: user.id }, role: "PARTNER" },
+          select: { id: true },
+        })
+      : [];
+
+    const rows = await fileRows(files);
+    await prisma.$transaction(async (tx) => {
+      const update = await tx.projectUpdate.create({
+        data: { projectId, authorId: user.id, body: body ?? "" },
       });
-    }
-    if (tagged.length) {
-      await tx.notification.createMany({
-        data: tagged.map((t) => ({
-          userId: t.id,
+      for (const f of rows) {
+        await tx.projectFile.create({
+          data: {
+            projectId,
+            updateId: update.id,
+            uploadedById: user.id,
+            name: f.name,
+            mimeType: f.mimeType,
+            size: f.size,
+            data: { create: { data: f.bytes } },
+          },
+        });
+      }
+      if (tagged.length) {
+        await tx.notification.createMany({
+          data: tagged.map((t) => ({
+            userId: t.id,
+            actorId: user.id,
+            projectId,
+            updateId: update.id,
+            message: `${user.name} תייג/ה אותך בעדכון בפרויקט "${project.name}"`,
+          })),
+        });
+      }
+      await tx.activity.create({
+        data: {
+          message: `${user.name} הוסיף/ה עדכון בפרויקט "${project.name}"`,
           actorId: user.id,
           projectId,
-          updateId: update.id,
-          message: `${user.name} תייג/ה אותך בעדכון בפרויקט "${project.name}"`,
-        })),
+        },
       });
-    }
-    await tx.activity.create({
-      data: {
-        message: `${user.name} הוסיף/ה עדכון בפרויקט "${project.name}"`,
-        actorId: user.id,
-        projectId,
-      },
     });
-  });
 
-  revalidateProject(projectId);
-  revalidatePath("/", "layout"); // the notification count
-  return { ok: true, ts: Date.now() };
+    revalidateProject(projectId);
+    revalidatePath("/", "layout"); // the notification count
+    return { ok: true, ts: Date.now() };
+  });
 }
 
 /** Only the author can delete their update (its attachments go with it). */
 export async function deleteUpdate(updateId: string): Promise<ActionState> {
-  const user = await requireUser();
-  const update = await prisma.projectUpdate.findUnique({
-    where: { id: updateId },
-    select: { projectId: true, authorId: true },
+  return withUndo("העדכון נמחק", async () => {
+    const user = await requireUser();
+    const update = await prisma.projectUpdate.findUnique({
+      where: { id: updateId },
+      select: { projectId: true, authorId: true },
+    });
+    if (!update) return { error: "העדכון לא נמצא" };
+    if (update.authorId !== user.id) return { error: "אפשר למחוק רק עדכון שכתבת" };
+    await prisma.projectUpdate.delete({ where: { id: updateId } });
+    revalidateProject(update.projectId);
+    revalidatePath("/", "layout");
+    return { ok: true, ts: Date.now() };
   });
-  if (!update) return { error: "העדכון לא נמצא" };
-  if (update.authorId !== user.id) return { error: "אפשר למחוק רק עדכון שכתבת" };
-  await prisma.projectUpdate.delete({ where: { id: updateId } });
-  revalidateProject(update.projectId);
-  revalidatePath("/", "layout");
-  return { ok: true, ts: Date.now() };
 }
 
 /** מסמכים: upload files. */
@@ -126,29 +131,31 @@ export async function uploadDocuments(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const user = await requireUser();
-  const files = filesOf(formData);
-  if (files.length === 0) return { error: "יש לבחור קובץ" };
-  const tooBig = checkFiles(files);
-  if (tooBig) return { error: tooBig };
+  return withUndo("המסמכים הועלו", async () => {
+    const user = await requireUser();
+    const files = filesOf(formData);
+    if (files.length === 0) return { error: "יש לבחור קובץ" };
+    const tooBig = checkFiles(files);
+    if (tooBig) return { error: tooBig };
 
-  const rows = await fileRows(files);
-  await prisma.$transaction(
-    rows.map((f) =>
-      prisma.projectFile.create({
-        data: {
-          projectId,
-          uploadedById: user.id,
-          name: f.name,
-          mimeType: f.mimeType,
-          size: f.size,
-          data: { create: { data: f.bytes } },
-        },
-      })
-    )
-  );
-  revalidateProject(projectId);
-  return { ok: true, ts: Date.now() };
+    const rows = await fileRows(files);
+    await prisma.$transaction(
+      rows.map((f) =>
+        prisma.projectFile.create({
+          data: {
+            projectId,
+            uploadedById: user.id,
+            name: f.name,
+            mimeType: f.mimeType,
+            size: f.size,
+            data: { create: { data: f.bytes } },
+          },
+        })
+      )
+    );
+    revalidateProject(projectId);
+    return { ok: true, ts: Date.now() };
+  });
 }
 
 /** מסמכים: a link to a file (e.g. Google Drive). */
@@ -157,25 +164,29 @@ export async function addDocumentLink(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const user = await requireUser();
-  const url = safeUrl(formData.get("url"));
-  if (!url) return { error: "יש להזין קישור תקין שמתחיל ב-https://" };
-  const name = str(formData.get("name")) ?? url;
-  await prisma.projectFile.create({
-    data: { projectId, uploadedById: user.id, name: name.slice(0, 200), url },
+  return withUndo("הקישור נוסף", async () => {
+    const user = await requireUser();
+    const url = safeUrl(formData.get("url"));
+    if (!url) return { error: "יש להזין קישור תקין שמתחיל ב-https://" };
+    const name = str(formData.get("name")) ?? url;
+    await prisma.projectFile.create({
+      data: { projectId, uploadedById: user.id, name: name.slice(0, 200), url },
+    });
+    revalidateProject(projectId);
+    return { ok: true, ts: Date.now() };
   });
-  revalidateProject(projectId);
-  return { ok: true, ts: Date.now() };
 }
 
 export async function deleteDocument(fileId: string): Promise<ActionState> {
-  await requireUser();
-  const file = await prisma.projectFile.delete({
-    where: { id: fileId },
-    select: { projectId: true },
+  return withUndo("המסמך נמחק", async () => {
+    await requireUser();
+    const file = await prisma.projectFile.delete({
+      where: { id: fileId },
+      select: { projectId: true },
+    });
+    revalidateProject(file.projectId);
+    return { ok: true, ts: Date.now() };
   });
-  revalidateProject(file.projectId);
-  return { ok: true, ts: Date.now() };
 }
 
 /** Open a notification: mark it read and go to the update it's about. */

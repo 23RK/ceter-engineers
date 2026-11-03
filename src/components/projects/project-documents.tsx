@@ -6,6 +6,7 @@ import { addDocumentLink, deleteDocument, uploadDocuments } from "@/lib/actions/
 import type { ActionState } from "@/lib/actions/tasks";
 import { MAX_UPLOAD_BYTES, formatBytes } from "@/lib/form-values";
 import { formatDateShort } from "@/lib/format";
+import { useActionResult, useUndoToast } from "@/components/ui/toast";
 
 export type FileInfo = {
   id: string;
@@ -69,6 +70,7 @@ export function ProjectDocuments({ projectId, files }: { projectId: string; file
 }
 
 function DocumentRow({ file }: { file: FileInfo }) {
+  const onResult = useActionResult();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   return (
@@ -103,7 +105,7 @@ function DocumentRow({ file }: { file: FileInfo }) {
         onClick={() => {
           if (!confirm(`למחוק את "${file.name}"?`)) return;
           start(async () => {
-            const res = await deleteDocument(file.id);
+            const res = onResult(await deleteDocument(file.id));
             if (res.error) setError(res.error);
           });
         }}
@@ -127,6 +129,7 @@ function UploadForm({ projectId }: { projectId: string }) {
     uploadDocuments.bind(null, projectId),
     {}
   );
+  useUndoToast(state);
   const ref = useRef<HTMLFormElement>(null);
   const [sizeError, setSizeError] = useState<string | null>(null);
   useEffect(() => {
@@ -168,6 +171,7 @@ function LinkForm({ projectId }: { projectId: string }) {
     addDocumentLink.bind(null, projectId),
     {}
   );
+  useUndoToast(state);
   const ref = useRef<HTMLFormElement>(null);
   useEffect(() => {
     if (state.ok) ref.current?.reset();

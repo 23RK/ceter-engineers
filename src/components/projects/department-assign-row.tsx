@@ -6,6 +6,8 @@ import { Check, ChevronLeft, Lightbulb, Pencil, X } from "lucide-react";
 import type { Department } from "@prisma/client";
 import { renameProject, setProjectDepartment } from "@/lib/actions/projects";
 import { DEPARTMENTS, departmentMeta } from "@/lib/departments";
+import { useActionResult } from "@/components/ui/toast";
+import { useSyncedState } from "@/lib/use-synced-state";
 
 export type AssignRowProject = {
   id: string;
@@ -23,9 +25,10 @@ export type AssignRowProject = {
  * message if saving fails (SPEC §1.1).
  */
 export function DepartmentAssignRow({ project }: { project: AssignRowProject }) {
-  const [department, setDepartment] = useState(project.department);
-  const [name, setName] = useState(project.name);
-  const [draft, setDraft] = useState(project.name);
+  const onResult = useActionResult();
+  const [department, setDepartment] = useSyncedState(project.department);
+  const [name, setName] = useSyncedState(project.name);
+  const [draft, setDraft] = useSyncedState(project.name);
   const [editing, setEditing] = useState(project.genericName);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -37,7 +40,7 @@ export function DepartmentAssignRow({ project }: { project: AssignRowProject }) 
     setError(null);
     startTransition(async () => {
       try {
-        const res = await setProjectDepartment(project.id, next);
+        const res = onResult(await setProjectDepartment(project.id, next));
         if (res.error) throw new Error(res.error);
       } catch {
         setDepartment(prev);
@@ -62,7 +65,7 @@ export function DepartmentAssignRow({ project }: { project: AssignRowProject }) 
     setError(null);
     startTransition(async () => {
       try {
-        const res = await renameProject(project.id, trimmed);
+        const res = onResult(await renameProject(project.id, trimmed));
         if (res.error) throw new Error(res.error);
       } catch {
         setName(prev);

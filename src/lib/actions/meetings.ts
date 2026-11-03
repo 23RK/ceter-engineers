@@ -1,5 +1,6 @@
 "use server";
 
+import { untracked, withUndo } from "@/lib/undo/undo";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
@@ -61,25 +62,27 @@ function revalidate() {
  * leaves the meeting marked "not yet in Google" and the cron retries it.
  */
 async function writeToGoogle(meetingId: string) {
-  await pushMeeting(meetingId).catch(() => {});
+  await untracked(() => pushMeeting(meetingId)).catch(() => {});
 }
 
 export async function createMeeting(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const user = await requireUser();
+  return withUndo("הפגישה נקבעה", async () => {
+    const user = await requireUser();
 
-  const fields = await readMeetingFields(formData, user.id);
-  if ("error" in fields) return fields;
+    const fields = await readMeetingFields(formData, user.id);
+    if ("error" in fields) return fields;
 
-  const meeting = await prisma.meeting.create({
-    data: { ...fields, createdById: user.id, googleSyncPending: true },
+    const meeting = await prisma.meeting.create({
+      data: { ...fields, createdById: user.id, googleSyncPending: true },
+    });
+    await writeToGoogle(meeting.id);
+
+    revalidate();
+    return { ok: true, ts: Date.now() };
   });
-  await writeToGoogle(meeting.id);
-
-  revalidate();
-  return { ok: true, ts: Date.now() };
 }
 
 // Used from a lead's task list to schedule + link a meeting in one step
@@ -89,28 +92,30 @@ export async function createMeetingForLeadTask(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const user = await requireUser();
+  return withUndo("הפגישה נקבעה", async () => {
+    const user = await requireUser();
 
-  const fields = await readMeetingFields(formData, user.id);
-  if ("error" in fields) return fields;
+    const fields = await readMeetingFields(formData, user.id);
+    if ("error" in fields) return fields;
 
-  const leadTask = await prisma.leadTask.findUnique({
-    where: { id: leadTaskId },
+    const leadTask = await prisma.leadTask.findUnique({
+      where: { id: leadTaskId },
+    });
+    if (!leadTask) return { error: "המשימה לא נמצאה" };
+
+    const meeting = await prisma.meeting.create({
+      data: { ...fields, createdById: user.id, googleSyncPending: true },
+    });
+    await prisma.leadTask.update({
+      where: { id: leadTaskId },
+      data: { meetingId: meeting.id },
+    });
+    await writeToGoogle(meeting.id);
+
+    revalidate();
+    revalidatePath(`/business-dev/${leadTask.leadId}`);
+    return { ok: true, ts: Date.now() };
   });
-  if (!leadTask) return { error: "המשימה לא נמצאה" };
-
-  const meeting = await prisma.meeting.create({
-    data: { ...fields, createdById: user.id, googleSyncPending: true },
-  });
-  await prisma.leadTask.update({
-    where: { id: leadTaskId },
-    data: { meetingId: meeting.id },
-  });
-  await writeToGoogle(meeting.id);
-
-  revalidate();
-  revalidatePath(`/business-dev/${leadTask.leadId}`);
-  return { ok: true, ts: Date.now() };
 }
 
 export async function updateMeeting(
@@ -118,52 +123,56 @@ export async function updateMeeting(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const user = await requireUser();
+  return withUndo("הפגישה עודכנה", async () => {
+    const user = await requireUser();
 
-  const existing = await prisma.meeting.findUnique({ where: { id: meetingId } });
-  if (!existing) return { error: "הפגישה לא נמצאה" };
-  if (existing.readOnly) {
-    return { error: "את הפגישה הזו עורכים ביומן Google (הוזמנתם אליה, או שהיא פרטית / של יום שלם)." };
-  }
+    const existing = await prisma.meeting.findUnique({ where: { id: meetingId } });
+    if (!existing) return { error: "הפגישה לא נמצאה" };
+    if (existing.readOnly) {
+      return { error: "את הפגישה הזו עורכים ביומן Google (הוזמנתם אליה, או שהיא פרטית / של יום שלם)." };
+    }
 
-  const fields = await readMeetingFields(formData, existing.ownerId ?? user.id);
-  if ("error" in fields) return fields;
+    const fields = await readMeetingFields(formData, existing.ownerId ?? user.id);
+    if ("error" in fields) return fields;
 
-  // Moved to the other partner: removed from the old owner's calendar first.
-  const ownerChanged = existing.ownerId && existing.ownerId !== fields.ownerId;
-  if (ownerChanged && existing.googleEventId) {
-    const removed = await deleteMeetingEvent(existing.ownerId!, existing.googleEventId);
-    if (!removed) return { error: "לא הצלחנו להעביר את הפגישה ביומן Google. נסו שוב." };
-  }
+    // Moved to the other partner: removed from the old owner's calendar first.
+    const ownerChanged = existing.ownerId && existing.ownerId !== fields.ownerId;
+    if (ownerChanged && existing.googleEventId) {
+      const removed = await deleteMeetingEvent(existing.ownerId!, existing.googleEventId);
+      if (!removed) return { error: "לא הצלחנו להעביר את הפגישה ביומן Google. נסו שוב." };
+    }
 
-  await prisma.meeting.update({
-    where: { id: meetingId },
-    data: {
-      ...fields,
-      googleSyncPending: true,
-      ...(ownerChanged ? { googleEventId: null, googleKey: null, googleUpdated: null } : {}),
-    },
+    await prisma.meeting.update({
+      where: { id: meetingId },
+      data: {
+        ...fields,
+        googleSyncPending: true,
+        ...(ownerChanged ? { googleEventId: null, googleKey: null, googleUpdated: null } : {}),
+      },
+    });
+    await writeToGoogle(meetingId);
+
+    revalidate();
+    return { ok: true, ts: Date.now() };
   });
-  await writeToGoogle(meetingId);
-
-  revalidate();
-  return { ok: true, ts: Date.now() };
 }
 
 export async function deleteMeeting(meetingId: string): Promise<ActionState> {
-  await requireUser();
-  const meeting = await prisma.meeting.findUnique({ where: { id: meetingId } });
-  if (!meeting) return { ok: true, ts: Date.now() };
-  if (meeting.readOnly) {
-    return { error: "את הפגישה הזו מוחקים ביומן Google." };
-  }
-  if (meeting.ownerId && meeting.googleEventId) {
-    const removed = await deleteMeetingEvent(meeting.ownerId, meeting.googleEventId);
-    if (!removed) return { error: "לא הצלחנו למחוק את הפגישה מיומן Google. נסו שוב." };
-  }
-  await prisma.meeting.delete({ where: { id: meetingId } });
-  revalidate();
-  return { ok: true, ts: Date.now() };
+  return withUndo("הפגישה נמחקה", async () => {
+    await requireUser();
+    const meeting = await prisma.meeting.findUnique({ where: { id: meetingId } });
+    if (!meeting) return { ok: true, ts: Date.now() };
+    if (meeting.readOnly) {
+      return { error: "את הפגישה הזו מוחקים ביומן Google." };
+    }
+    if (meeting.ownerId && meeting.googleEventId) {
+      const removed = await deleteMeetingEvent(meeting.ownerId, meeting.googleEventId);
+      if (!removed) return { error: "לא הצלחנו למחוק את הפגישה מיומן Google. נסו שוב." };
+    }
+    await prisma.meeting.delete({ where: { id: meetingId } });
+    revalidate();
+    return { ok: true, ts: Date.now() };
+  });
 }
 
 /** "סנכרון עכשיו": reads both partners' calendars right away. */

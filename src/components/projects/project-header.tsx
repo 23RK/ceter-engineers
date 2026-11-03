@@ -35,6 +35,7 @@ import { fullAddress, wazeHref } from "@/lib/contacts";
 import { isArchived } from "@/lib/project-list";
 import { formatDate, formatDateShort, formatMoney, isOverdue } from "@/lib/format";
 import type { UserOption } from "@/lib/types";
+import { useActionResult } from "@/components/ui/toast";
 
 type Stage = Pick<
   Milestone,
@@ -59,6 +60,7 @@ export function ProjectHeader({
   /** Contacts linked as לקוח (SPEC §3.4: the client links to a contact card). */
   clients: (ContactInfo & { projectNames: string[] })[];
 }) {
+  const onResult = useActionResult();
   const status = projectStatusMeta(project.status);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -73,7 +75,7 @@ export function ProjectHeader({
   function toggleArchive() {
     setError(null);
     startArchive(async () => {
-      const res = await setProjectArchived(project.id, !archivedByHand);
+      const res = onResult(await setProjectArchived(project.id, !archivedByHand));
       if (res.error) setError(res.error);
     });
   }
@@ -335,6 +337,7 @@ function DeleteProjectForm({
   onCancel: () => void;
   onArchive: () => void;
 }) {
+  const onResult = useActionResult();
   const [typed, setTyped] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -375,7 +378,7 @@ function DeleteProjectForm({
           onClick={() =>
             start(async () => {
               setError(null);
-              const res = await deleteProject(project.id, typed);
+              const res = onResult(await deleteProject(project.id, typed));
               if (res?.error) setError(res.error);
             })
           }

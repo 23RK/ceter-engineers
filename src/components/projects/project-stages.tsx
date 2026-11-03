@@ -30,6 +30,8 @@ import {
   statusChanges,
 } from "@/lib/stages";
 import { formatDateShort, isOverdue, toDateInputValue } from "@/lib/format";
+import { useActionResult } from "@/components/ui/toast";
+import { useSyncedState } from "@/lib/use-synced-state";
 
 type Stage = Pick<
   Milestone,
@@ -95,6 +97,7 @@ export function ProjectStages({
 }) {
   const [stages, apply] = useOptimistic(serverStages, applyChange);
   const [, startTransition] = useTransition();
+  const onResult = useActionResult();
   const [error, setError] = useState<string | null>(null);
 
   /** Show the change now; if saving fails it rolls back by itself, with a message. */
@@ -103,7 +106,7 @@ export function ProjectStages({
     startTransition(async () => {
       if (change) apply(change);
       try {
-        const res = await save();
+        const res = onResult(await save());
         if (res.error) setError(res.error);
       } catch {
         setError("השינוי לא נשמר. נסו שוב.");
@@ -203,7 +206,7 @@ function StageRow({
   run: (change: Change | null, save: () => Promise<ActionState>) => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(stage.title);
+  const [draft, setDraft] = useSyncedState(stage.title);
   // Just added, not saved yet: it has no real id to act on.
   const saving = stage.id.startsWith("new-");
   const done = stage.status === "DONE";

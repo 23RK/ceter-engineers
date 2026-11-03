@@ -22,6 +22,8 @@ import {
   type FeeTerms,
 } from "@/lib/fees";
 import { formatMoney, isOverdue, toDateInputValue } from "@/lib/format";
+import { useActionResult, useUndoToast } from "@/components/ui/toast";
+import { useSyncedState } from "@/lib/use-synced-state";
 
 export type PaymentInfo = {
   id: string;
@@ -83,6 +85,7 @@ export function ProjectFinance({
         })
   );
   const [, startTransition] = useTransition();
+  const onResult = useActionResult();
   const [error, setError] = useState<string | null>(null);
 
   function run(change: Change, save: () => Promise<ActionState>) {
@@ -90,7 +93,7 @@ export function ProjectFinance({
     startTransition(async () => {
       apply(change);
       try {
-        const res = await save();
+        const res = onResult(await save());
         if (res.error) setError(res.error);
       } catch {
         setError("השינוי לא נשמר. נסו שוב.");
@@ -189,6 +192,7 @@ function FeeTermsForm({
     saveFeeTerms.bind(null, projectId),
     {}
   );
+  useUndoToast(state);
   // "נשמר" until the form is changed again.
   const [changedAt, setChangedAt] = useState(0);
   const saved = !!state.ok && !pending && (state.ts ?? 0) > changedAt;
@@ -311,6 +315,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function RetainerButton({ projectId, onError }: { projectId: string; onError: (e: string | null) => void }) {
+  const onResult = useActionResult();
   const [pending, start] = useTransition();
   return (
     <button
@@ -319,7 +324,7 @@ function RetainerButton({ projectId, onError }: { projectId: string; onError: (e
       onClick={() =>
         start(async () => {
           onError(null);
-          const res = await generateRetainerPayments(projectId);
+          const res = onResult(await generateRetainerPayments(projectId));
           if (res.error) onError(res.error);
         })
       }
@@ -344,7 +349,7 @@ function PaymentRow({
   const overdue = !payment.paid && isOverdue(payment.dueDate);
   const stage = stages.find((s) => s.id === payment.stageId);
   const stageDoneUnpaid = !payment.paid && stage?.status === "DONE";
-  const [title, setTitle] = useState(payment.title ?? "");
+  const [title, setTitle] = useSyncedState(payment.title ?? "");
   const [amount, setAmount] = useState(String(payment.amount));
   const control =
     "min-h-9 rounded-lg border border-transparent bg-black/[0.03] px-2 text-sm outline-none focus:border-brand-400 focus:bg-white";
@@ -461,6 +466,7 @@ function NewPaymentForm({ projectId, stages }: { projectId: string; stages: Stag
     createPayment.bind(null, projectId),
     {}
   );
+  useUndoToast(state);
   const ref = useRef<HTMLFormElement>(null);
   useEffect(() => {
     if (state.ok) ref.current?.reset();

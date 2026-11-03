@@ -678,3 +678,41 @@ model Inspection {
   @@index([clientPhone])
   @@index([parentInspectionId])
 }
+
+// ---------------------------------------------------------------------------
+// ביטול פעולה וסל מחזור (stage 5b). Recorded centrally by the Prisma
+// extension in src/lib/prisma.ts - see src/lib/undo/.
+
+// One undoable action ("בטל" in the toast): what it created, the fields it
+// changed (before / after), and what it moved to the recycle bin.
+model UndoEntry {
+  id        String    @id @default(cuid())
+  userId    String?
+  label     String
+  ops       Json
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  undoneAt  DateTime?
+
+  @@index([createdAt])
+}
+
+// סל מחזור: a deleted row and everything deleted with it (cascade), kept as
+// a snapshot for 30 days, then deleted for good. The original rows are
+// really gone from their tables, so no screen needs a "deleted" filter.
+model TrashItem {
+  id          String   @id @default(cuid())
+  model       String // the deleted row's model, e.g. "Task"
+  rootId      String
+  kind        String // Hebrew, e.g. "משימה"
+  title       String
+  context     String? // e.g. the project it belonged to
+  visible     Boolean  @default(true) // shown in the recycle bin (incidental rows are not)
+  snapshot    Json
+  deletedById String?
+  deletedAt   DateTime @default(now())
+  purgeAfter  DateTime
+
+  @@index([visible, deletedAt])
+  @@index([purgeAfter])
+}

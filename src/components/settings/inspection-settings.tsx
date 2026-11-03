@@ -19,6 +19,8 @@ import {
 import type { ActionState } from "@/lib/actions/tasks";
 import { EMPLOYMENT_TYPES, INSPECTION_KINDS, employmentLabel, kindLabel } from "@/lib/inspections";
 import { formatMoney } from "@/lib/format";
+import { useActionResult, useUndoToast } from "@/components/ui/toast";
+import { useSyncedState } from "@/lib/use-synced-state";
 
 type Inspector = {
   id: string;
@@ -49,12 +51,13 @@ const iconBtn =
 /** Saves in the background and shows an error if it fails. */
 function useSave() {
   const [pending, start] = useTransition();
+  const onResult = useActionResult();
   const [error, setError] = useState<string | null>(null);
   const save = (fn: () => Promise<ActionState>) =>
     start(async () => {
       setError(null);
       try {
-        const res = await fn();
+        const res = onResult(await fn());
         if (res.error) setError(res.error);
       } catch {
         setError("השינוי לא נשמר. נסו שוב.");
@@ -188,6 +191,7 @@ function InspectorForm({ inspector, onDone }: { inspector?: Inspector; onDone: (
     saveInspector.bind(null, inspector?.id ?? null),
     {}
   );
+  useUndoToast(state);
   useEffect(() => {
     if (state.ok) onDone();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -279,7 +283,7 @@ function TypeRow({
   last: boolean;
   save: (fn: () => Promise<ActionState>) => void;
 }) {
-  const [name, setName] = useState(type.name);
+  const [name, setName] = useSyncedState(type.name);
   return (
     <li className={`flex items-center gap-2 py-1.5 ${type.active ? "" : "opacity-50"}`}>
       <input
@@ -369,7 +373,7 @@ function PriceList({ types, tiers }: { types: AptType[]; tiers: Tier[] }) {
 }
 
 function PriceCell({ value, label, onSave }: { value: number | null; label: string; onSave: (v: string) => void }) {
-  const [v, setV] = useState(value != null ? String(value) : "");
+  const [v, setV] = useSyncedState(value != null ? String(value) : "");
   return (
     <input
       value={v}
@@ -462,6 +466,7 @@ function Rates({ inspectors, types, rates }: { inspectors: Inspector[]; types: A
 
 function RateForm({ inspectorId, types, rate, onDone }: { inspectorId: string; types: AptType[]; rate?: Rate; onDone: () => void }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(saveRate.bind(null, rate?.id ?? null), {});
+  useUndoToast(state);
   useEffect(() => {
     if (state.ok) onDone();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -512,6 +517,7 @@ function RateForm({ inspectorId, types, rate, onDone }: { inspectorId: string; t
 
 function VatForm({ vatRate }: { vatRate: number }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(saveVatRate, {});
+  useUndoToast(state);
   return (
     <Section title='שיעור מע"מ' hint='כל הסכומים נשמרים ללא מע"מ. המערכת מציגה גם סכום כולל מע"מ לפי השיעור הזה.'>
       <form action={action} className="flex items-center gap-2">
