@@ -1,14 +1,15 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import {
   createMeeting,
   createMeetingForLeadTask,
   updateMeeting,
   type ActionState,
 } from "@/lib/actions/meetings";
-import { toDateTimeInputValue } from "@/lib/format";
+import { toIsraelDateTimeInput } from "@/lib/israel-time";
 import type { Meeting } from "@prisma/client";
+import type { UserOption } from "@/lib/types";
 
 const initialState: ActionState = {};
 
@@ -21,13 +22,19 @@ export function MeetingForm({
   defaultEnd,
   defaultTitle,
   forLeadTaskId,
+  partners,
+  currentUserId,
   onClose,
 }: {
   meeting?: Meeting;
-  defaultStart?: Date;
-  defaultEnd?: Date;
+  /** A Date, or a datetime-local value ("yyyy-MM-ddTHH:mm", Israel time). */
+  defaultStart?: Date | string;
+  defaultEnd?: Date | string;
   defaultTitle?: string;
   forLeadTaskId?: string;
+  /** Ron and Guy - for "whose calendar" and "invite the partner". */
+  partners?: UserOption[];
+  currentUserId?: string;
   onClose: () => void;
 }) {
   const action = meeting
@@ -41,6 +48,12 @@ export function MeetingForm({
     if (state.ok) onClose();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.ts]);
+
+  const asInput = (v: Date | string | undefined | null) =>
+    typeof v === "string" ? v : toIsraelDateTimeInput(v);
+  const defaultOwner = meeting?.ownerId ?? currentUserId ?? partners?.[0]?.id ?? "";
+  const [ownerId, setOwnerId] = useState(defaultOwner);
+  const partner = partners?.find((p) => p.id !== ownerId);
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
@@ -64,9 +77,7 @@ export function MeetingForm({
             type="datetime-local"
             name="startTime"
             required
-            defaultValue={toDateTimeInputValue(
-              meeting?.startTime ?? defaultStart
-            )}
+            defaultValue={asInput(meeting?.startTime ?? defaultStart)}
             className={inputClass}
             dir="ltr"
           />
@@ -77,14 +88,39 @@ export function MeetingForm({
             type="datetime-local"
             name="endTime"
             required
-            defaultValue={toDateTimeInputValue(
-              meeting?.endTime ?? defaultEnd
-            )}
+            defaultValue={asInput(meeting?.endTime ?? defaultEnd)}
             className={inputClass}
             dir="ltr"
           />
         </div>
       </div>
+
+      {partners && partners.length > 1 && (
+        <div className="flex flex-col gap-2 rounded-lg bg-black/[0.03] px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <span className="text-sm font-medium text-brand-900">ביומן של</span>
+            {partners.map((p) => (
+              <label key={p.id} className="flex items-center gap-1.5 text-sm">
+                <input
+                  type="radio"
+                  name="ownerId"
+                  value={p.id}
+                  checked={ownerId === p.id}
+                  onChange={() => setOwnerId(p.id)}
+                />
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
+                {p.name}
+              </label>
+            ))}
+          </div>
+          {partner && (
+            <label className="flex items-center gap-2 text-sm text-black/70">
+              <input type="checkbox" name="withPartner" defaultChecked={meeting?.withPartner ?? false} />
+              להזמין גם את {partner.name} (הפגישה תופיע גם ביומן של {partner.name})
+            </label>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-col gap-1.5">
         <label className="text-sm font-medium text-brand-900">מיקום</label>

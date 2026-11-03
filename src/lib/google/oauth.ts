@@ -112,6 +112,10 @@ export const calendarConnectDeps: ConnectDeps = {
       accessTokenExpiresAt: new Date(tokens.expiryDate ?? Date.now() + 3600_000),
       calendarId: "primary",
       lastSyncedAt: null,
+      // (Re)connected: the next sync reads the calendar from scratch.
+      syncToken: null,
+      lastFullSyncAt: null,
+      syncError: null,
     };
     try {
       await prisma.googleAccount.upsert({

@@ -10,7 +10,8 @@ import {
 } from "date-fns";
 import { AddMeetingButton } from "@/components/calendar/add-meeting-button";
 import { MeetingChip } from "@/components/calendar/meeting-chip";
-import type { MeetingWithCreator } from "@/lib/types";
+import type { MeetingWithCreator, UserOption } from "@/lib/types";
+import { israelDayKey } from "@/lib/israel-time";
 import Link from "next/link";
 import { ClipboardCheck } from "lucide-react";
 
@@ -30,21 +31,30 @@ export function MonthGrid({
   monthDate,
   meetings,
   inspections = [],
+  partners,
+  currentUserId,
 }: {
   monthDate: Date;
   meetings: MeetingWithCreator[];
   inspections?: CalendarInspection[];
+  partners: UserOption[];
+  currentUserId: string;
 }) {
   const gridStart = startOfWeek(startOfMonth(monthDate), { weekStartsOn: 0 });
   const gridEnd = endOfWeek(endOfMonth(monthDate), { weekStartsOn: 0 });
   const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
 
   const meetingsByDay = new Map<string, MeetingWithCreator[]>();
+  // Grouped by the day in Israel (the server runs in UTC). A meeting over
+  // several days (e.g. an all-day event) shows on each of them.
   for (const meeting of meetings) {
-    const key = format(new Date(meeting.startTime), "yyyy-MM-dd");
-    const list = meetingsByDay.get(key) ?? [];
-    list.push(meeting);
-    meetingsByDay.set(key, list);
+    const first = israelDayKey(meeting.startTime);
+    const last = israelDayKey(new Date(new Date(meeting.endTime).getTime() - 1));
+    for (const day of days) {
+      const key = format(day, "yyyy-MM-dd");
+      if (key < first || key > (last < first ? first : last)) continue;
+      meetingsByDay.set(key, [...(meetingsByDay.get(key) ?? []), meeting]);
+    }
   }
 
   // Inspection dates are date-only (UTC midnight).
@@ -69,15 +79,13 @@ export function MonthGrid({
       <div className="grid grid-cols-7">
         {days.map((day) => {
           const key = format(day, "yyyy-MM-dd");
+          // All-day events first, then by start time.
           const dayMeetings = (meetingsByDay.get(key) ?? []).sort(
             (a, b) =>
+              Number(b.allDay) - Number(a.allDay) ||
               new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
           );
           const inMonth = isSameMonth(day, monthDate);
-          const dayStart = new Date(day);
-          dayStart.setHours(9, 0, 0, 0);
-          const dayEnd = new Date(day);
-          dayEnd.setHours(10, 0, 0, 0);
 
           return (
             <div
@@ -99,14 +107,21 @@ export function MonthGrid({
                   {format(day, "d")}
                 </span>
                 <AddMeetingButton
-                  defaultStart={dayStart}
-                  defaultEnd={dayEnd}
+                  defaultStart={`${key}T09:00`}
+                  defaultEnd={`${key}T10:00`}
                   variant="icon"
+                  partners={partners}
+                  currentUserId={currentUserId}
                 />
               </div>
               <div className="flex flex-1 flex-col gap-1">
                 {dayMeetings.map((meeting) => (
-                  <MeetingChip key={meeting.id} meeting={meeting} />
+                  <MeetingChip
+                    key={meeting.id}
+                    meeting={meeting}
+                    partners={partners}
+                    currentUserId={currentUserId}
+                  />
                 ))}
                 {(inspectionsByDay.get(key) ?? [])
                   .sort((a, b) => (a.time ?? "99").localeCompare(b.time ?? "99"))

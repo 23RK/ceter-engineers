@@ -30,4 +30,6 @@ export type LeadWithTasks = Lead & {
 
 export type MeetingWithCreator = Meeting & {
   createdBy: UserOption;
+  /** Whose Google calendar it is in (SPEC §2.2). */
+  owner: UserOption | null;
 };

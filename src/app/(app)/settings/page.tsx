@@ -12,6 +12,9 @@ import { ROLE_LABELS, requireUser } from "@/lib/auth";
 import { getCalendarConnection, isGoogleConfigured } from "@/lib/google/oauth";
 import { SYNCABLE_GOOGLE_ACCOUNTS } from "@/lib/google/calendar-access";
 import { googleConfigIssues } from "@/lib/google/env";
+import { calendarSyncStatus } from "@/lib/google/calendar-sync";
+import { israelDayKey, israelTime } from "@/lib/israel-time";
+import { SyncNowButton } from "@/components/calendar/sync-now-button";
 import { disconnectCalendarAction } from "@/lib/actions/auth";
 import { ChangePasswordForm } from "@/components/change-password-form";
 
@@ -122,6 +125,9 @@ export default async function SettingsPage({
 
   const canSyncCalendar = SYNCABLE_GOOGLE_ACCOUNTS.includes(user.email);
   const connection = canSyncCalendar ? await getCalendarConnection(user.id) : null;
+  const sync = connection
+    ? (await calendarSyncStatus()).find((s) => s.userId === user.id) ?? null
+    : null;
 
   return (
     <div className="flex flex-col gap-5">
@@ -230,6 +236,29 @@ export default async function SettingsPage({
             )}
           </p>
 
+          {connection && sync && (
+            <div className="mt-3 flex flex-col gap-1 rounded-lg bg-black/[0.03] px-3 py-2 text-xs text-black/60">
+              <p>
+                סנכרון דו-כיווני פעיל: פגישות מהיומן מופיעות במערכת, ופגישות שנקבעות במערכת
+                (ובדיקות בדק בית שלך) נכתבות ליומן.
+              </p>
+              <p>
+                עדכון אחרון מ-Google:{" "}
+                {sync.lastSyncedAt
+                  ? `${israelDayKey(sync.lastSyncedAt).split("-").reverse().join("/")} ${israelTime(sync.lastSyncedAt)}`
+                  : "עוד לא"}
+                {" · "}
+                {sync.pushActive ? "עדכונים מיידיים פעילים" : "עדכונים מיידיים לא פעילים (מתעדכן כל 10 דקות ובפתיחת היומן)"}
+              </p>
+              {sync.pendingMeetings > 0 && (
+                <p className="text-amber-700">
+                  {sync.pendingMeetings} פגישות עוד לא נכתבו ל-Google. ננסה שוב אוטומטית.
+                </p>
+              )}
+              {sync.syncError && <p className="text-red-600">{sync.syncError}</p>}
+            </div>
+          )}
+
           {configIssues.length > 0 && (
             <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
               <p className="mb-1 font-semibold">בעיות בהגדרות השרת (Vercel ← Settings ← Environment Variables):</p>
@@ -257,6 +286,7 @@ export default async function SettingsPage({
                 חיבור ל-Google עוד לא הוגדר בשרת (ראו docs/google-cloud-setup.md).
               </p>
             )}
+            {connection && <SyncNowButton />}
             {connection && (
               <form action={disconnectCalendarAction}>
                 <button

@@ -18,11 +18,11 @@ import { DEPARTMENTS } from "@/lib/departments";
 import { isArchived } from "@/lib/project-list";
 import { expectedCollection, monthRange, splitDeadlines } from "@/lib/dashboard";
 import { USER_OPTION_SELECT } from "@/lib/types";
+import { israelDayKey, israelTime } from "@/lib/israel-time";
 import {
   formatDate,
   formatDateShort,
   formatMoney,
-  formatTime,
   isOverdue,
   israelToday,
 } from "@/lib/format";
@@ -253,9 +253,9 @@ export default async function DashboardPage() {
                         </p>
                       )}
                     </div>
-                    <span className="shrink-0 text-xs font-medium text-black/40">
-                      {formatDateShort(meeting.startTime)} ·{" "}
-                      {formatTime(meeting.startTime)}
+                    <span className="shrink-0 text-xs font-medium text-black/40" dir="ltr">
+                      {israelDayKey(meeting.startTime).split("-").reverse().slice(0, 2).map(Number).join("/")}
+                      {meeting.allDay ? "" : ` · ${israelTime(meeting.startTime)}`}
                     </span>
                   </Link>
                 ))}

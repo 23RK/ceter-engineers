@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
+import { syncInspectionEventSafely } from "@/lib/google/calendar-sync";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import type { ActionState } from "@/lib/actions/tasks";
@@ -24,6 +26,14 @@ function revalidate() {
   revalidatePath("/inspections", "layout");
   revalidatePath("/calendar");
   revalidatePath("/dashboard");
+}
+
+/**
+ * An inspection of Ron / Guy is written to their Google calendar (SPEC §4.3),
+ * after the response so editing stays fast. Unchanged events aren't rewritten.
+ */
+function writeToGoogleLater(inspectionId: string) {
+  after(() => syncInspectionEventSafely(inspectionId));
 }
 
 async function pricingContext(): Promise<PricingContext> {
@@ -98,7 +108,7 @@ export async function createInspection(
   const d = date(formData.get("date"));
   const parentInspectionId = str(formData.get("parentInspectionId"));
 
-  await prisma.inspection.create({
+  const created = await prisma.inspection.create({
     data: {
       clientName,
       clientPhone: str(formData.get("clientPhone")),
@@ -121,6 +131,7 @@ export async function createInspection(
       createdById: user.id,
     },
   });
+  writeToGoogleLater(created.id);
   revalidate();
   return { ok: true, ts: Date.now() };
 }
@@ -156,6 +167,7 @@ export async function updateInspection(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { id, createdAt, parentInspectionId, ...data } = next;
   await prisma.inspection.update({ where: { id: inspectionId }, data });
+  writeToGoogleLater(inspectionId);
   revalidate();
   return { ok: true, ts: Date.now() };
 }
