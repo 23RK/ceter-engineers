@@ -27,6 +27,21 @@ function revalidateProjectLists() {
   revalidatePath("/dashboard");
 }
 
+/** The owner (אחראי) must be one of the partners; empty means no owner. */
+async function parseOwnerId(
+  value: FormDataEntryValue | null
+): Promise<{ ownerId: string | null; error?: string }> {
+  const id = String(value ?? "").trim();
+  if (!id) return { ownerId: null };
+  const owner = await prisma.user.findFirst({
+    where: { id, role: "PARTNER" },
+    select: { id: true },
+  });
+  return owner
+    ? { ownerId: owner.id }
+    : { ownerId: null, error: "אחראי לא חוקי" };
+}
+
 function toOptionalFloat(value: FormDataEntryValue | null) {
   const str = String(value ?? "").trim();
   if (!str) return null;
@@ -46,10 +61,27 @@ export async function createProject(
   const department = formData.get("department");
   if (!isDepartment(department)) return { error: "יש לבחור מחלקה" };
 
+  const owner = await parseOwnerId(formData.get("ownerId"));
+  if (owner.error) return { error: owner.error };
+
+  // A new project starts with its department's stage template (SPEC §3.3).
+  const templates = await prisma.stageTemplate.findMany({
+    where: { department },
+    orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+    select: { title: true },
+  });
+  const stageDue = formData.getAll("stageDue").map((v) => toOptionalDate(v));
+
   const project = await prisma.project.create({
     data: {
       name,
       department,
+      ownerId: owner.ownerId,
+      city: toOptionalString(formData.get("city")),
+      milestones: {
+        // Planned dates proposed by the form (spread evenly, editable), in template order.
+        create: templates.map((t, order) => ({ title: t.title, order, dueDate: stageDue[order] ?? null })),
+      },
       client: toOptionalString(formData.get("client")),
       address: toOptionalString(formData.get("address")),
       status: (formData.get("status") as ProjectStatus) || "PLANNING",
@@ -98,11 +130,16 @@ export async function updateProject(
   }
   const department = isDepartment(departmentValue) ? departmentValue : null;
 
+  const owner = await parseOwnerId(formData.get("ownerId"));
+  if (owner.error) return { error: owner.error };
+
   await prisma.project.update({
     where: { id: projectId },
     data: {
       name,
       department,
+      ownerId: owner.ownerId,
+      city: toOptionalString(formData.get("city")),
       client: toOptionalString(formData.get("client")),
       address: toOptionalString(formData.get("address")),
       status,
@@ -173,54 +210,49 @@ export async function renameProject(
   return { ok: true, ts: Date.now() };
 }
 
-export async function deleteProject(projectId: string) {
-  await requireUser();
-  const project = await prisma.project.delete({
-    where: { id: projectId },
-    select: { department: true },
-  });
-  revalidateProjectLists();
-  redirect(departmentHref(project.department));
-}
-
-export async function createMilestone(
+/** "העבר לארכיון" (SPEC §3.4): the safe default instead of deleting. */
+export async function setProjectArchived(
   projectId: string,
-  _prev: ActionState,
-  formData: FormData
+  archived: boolean
 ): Promise<ActionState> {
-  await requireUser();
-
-  const title = String(formData.get("title") ?? "").trim();
-  if (!title) return { error: "יש להזין כותרת לאבן דרך" };
-
-  const count = await prisma.milestone.count({ where: { projectId } });
-
-  await prisma.milestone.create({
+  const user = await requireUser();
+  const project = await prisma.project.update({
+    where: { id: projectId },
+    data: { archivedAt: archived ? new Date() : null },
+    select: { name: true },
+  });
+  await prisma.activity.create({
     data: {
-      title,
-      dueDate: toOptionalDate(formData.get("dueDate")),
+      message: archived
+        ? `${user.name} העביר/ה את הפרויקט "${project.name}" לארכיון`
+        : `${user.name} החזיר/ה את הפרויקט "${project.name}" מהארכיון`,
+      actorId: user.id,
       projectId,
-      order: count,
     },
   });
-
+  revalidateProjectLists();
   revalidatePath(`/projects/${projectId}`);
   return { ok: true, ts: Date.now() };
 }
 
-export async function toggleMilestone(milestoneId: string, done: boolean) {
+/**
+ * Full delete - only after a double confirmation (SPEC §3.4): the screen asks
+ * twice, and the project's name must be typed exactly.
+ */
+export async function deleteProject(
+  projectId: string,
+  confirmName: string
+): Promise<ActionState> {
   await requireUser();
-  const milestone = await prisma.milestone.update({
-    where: { id: milestoneId },
-    data: { done },
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { name: true, department: true },
   });
-  revalidatePath(`/projects/${milestone.projectId}`);
-}
-
-export async function deleteMilestone(milestoneId: string) {
-  await requireUser();
-  const milestone = await prisma.milestone.delete({
-    where: { id: milestoneId },
-  });
-  revalidatePath(`/projects/${milestone.projectId}`);
+  if (!project) return { error: "הפרויקט לא נמצא" };
+  if (confirmName.trim() !== project.name.trim()) {
+    return { error: "השם שהוקלד לא תואם לשם הפרויקט. הפרויקט לא נמחק." };
+  }
+  await prisma.project.delete({ where: { id: projectId } });
+  revalidateProjectLists();
+  redirect(departmentHref(project.department));
 }

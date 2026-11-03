@@ -23,6 +23,67 @@ enum Department {
   VILLA // ניהול ופיקוח – וילות
 }
 
+// A project stage's progress (SPEC §3.3).
+enum StageStatus {
+  NOT_STARTED // לא התחיל
+  IN_PROGRESS // בביצוע
+  DONE // הושלם
+}
+
+// שכר טרחה: how a project's fee is set (SPEC §3.5).
+enum FeeModel {
+  MILESTONES // סכום כולל לפי אבני דרך
+  RETAINER // ריטיינר חודשי
+  PERCENTAGE // אחוז מעלות הבנייה
+}
+
+// A contact's role in a project (SPEC §3.4 "אנשי קשר").
+enum ContactRole {
+  CLIENT // לקוח
+  DEVELOPER // יזם
+  CONTRACTOR // קבלן מבצע
+  ARCHITECT // אדריכל
+  ENGINEER // מהנדס
+  CONSULTANT // יועץ
+  OTHER // אחר
+}
+
+// בדק בית (SPEC §4.2)
+enum EmploymentType {
+  OWNER // בעלים (רון / גיא) - never owed inspector pay
+  FREELANCER
+  EMPLOYEE
+}
+
+enum InspectionKind {
+  REGULAR // רגילה
+  REPEAT // חוזרת - after the contractor fixed the defects
+}
+
+enum InspectionStatus {
+  PENDING_SCHEDULING // ממתין לתיאום
+  SCHEDULED // תואם
+  DONE // בוצע
+  REPORT_SENT // דוח נשלח
+  COMPLETED // הושלם
+  CANCELED // בוטל
+}
+
+enum InspectionPaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
+enum PaymentMethod {
+  TRANSFER // העברה
+  BIT // ביט
+  PAYBOX // פייבוקס
+  CHECK // צ'ק
+  CASH // מזומן
+  CREDIT // אשראי
+}
+
 enum TaskStatus {
   TODO
   IN_PROGRESS
@@ -64,6 +125,8 @@ model User {
   color     String   @default("#2563eb")
   createdAt DateTime @default(now())
 
+  ownedProjects Project[] @relation("ProjectOwner")
+
   passwordHash      String? // bcrypt
   // Sessions signed in before this moment are rejected (sign out everywhere
   // on password change).
@@ -78,6 +141,14 @@ model User {
   meetings      Meeting[]
   googleAccount GoogleAccount?
   meetingSyncs  MeetingGoogleSync[]
+
+  projectUpdates     ProjectUpdate[]
+  uploadedFiles      ProjectFile[]
+  supervisionReports SupervisionReport[]
+  notifications      Notification[]      @relation("NotificationRecipient")
+  sentNotifications  Notification[]      @relation("NotificationActor")
+  inspector          Inspector?
+  inspections        Inspection[]
 }
 
 model Project {
@@ -85,32 +156,241 @@ model Project {
   name        String
   client      String?
   address     String?
+  city        String?
   status      ProjectStatus @default(PLANNING)
   department  Department?
   description String?
   budget      Float?
   startDate   DateTime?
   endDate     DateTime?
+  // Moved to the archive by hand ("העבר לארכיון"). Projects that are הושלם /
+  // בוטל are in the archive too - see isArchived() in src/lib/project-list.ts.
+  archivedAt  DateTime?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  tasks      Task[]
-  milestones Milestone[]
-  activities Activity[]
+  // אחראי (רון / גיא)
+  owner   User?   @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  ownerId String?
+
+  // שכר טרחה (SPEC §3.5). Which fields apply depends on feeModel; amounts in ₪.
+  feeModel            FeeModel?
+  feeTotal            Float? // MILESTONES: סכום כולל
+  feeMonthly          Float? // RETAINER: סכום לחודש
+  feeStartDate        DateTime? // RETAINER: תאריך התחלה
+  feeEndDate          DateTime? // RETAINER: תאריך סיום
+  // RETAINER: יום הגבייה בחודש (1 / 10 / 0 = סוף החודש; empty = the start date's day)
+  feeBillingDay       Int?
+  // RETAINER: תנאי תשלום - 0 מיידי, 30 / 60 = שוטף+30 / שוטף+60 (empty = מיידי)
+  feePaymentTermsDays Int?
+  feePercent          Float? // PERCENTAGE: אחוז
+  feeConstructionCost Float? // PERCENTAGE: עלות בנייה משוערת
+  feeNotes            String?
+
+  tasks              Task[]
+  milestones         Milestone[]
+  activities         Activity[]
+  payments           Payment[]
+  updates            ProjectUpdate[]
+  files              ProjectFile[]
+  contacts           ProjectContact[]
+  supervisionReports SupervisionReport[]
+  changeOrders       ChangeOrder[]
+  notifications      Notification[]
 
   @@index([department])
+  @@index([ownerId])
+  @@index([archivedAt])
 }
 
+// A project stage (shown as "שלב" in the UI). dueDate is the planned date,
+// completedAt the actual date. `done` is kept in sync with status == DONE for
+// backward compatibility (it can be dropped later, with approval).
 model Milestone {
-  id        String    @id @default(cuid())
-  title     String
-  dueDate   DateTime?
-  done      Boolean   @default(false)
-  order     Int       @default(0)
-  createdAt DateTime  @default(now())
+  id          String      @id @default(cuid())
+  title       String
+  dueDate     DateTime?
+  done        Boolean     @default(false)
+  status      StageStatus @default(NOT_STARTED)
+  completedAt DateTime?
+  order       Int         @default(0)
+  createdAt   DateTime    @default(now())
 
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId String
+
+  payments Payment[]
+
+  @@index([projectId, order])
+}
+
+// One row of a project's לוח גבייה (SPEC §3.5). A payment can be tied to a
+// stage: when that stage is done and the payment isn't paid, the app alerts.
+model Payment {
+  id            String    @id @default(cuid())
+  title         String?
+  amount        Float
+  dueDate       DateTime?
+  invoiceIssued Boolean   @default(false) // חשבונית הוצאה
+  paid          Boolean   @default(false)
+  paidAt        DateTime?
+  order         Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+  stage     Milestone? @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  stageId   String?
+
+  @@index([projectId, order])
+  @@index([stageId])
+}
+
+// A note in a project's "עדכונים" thread, with attachments; tagging a partner
+// creates a Notification for them.
+model ProjectUpdate {
+  id        String   @id @default(cuid())
+  body      String
+  createdAt DateTime @default(now())
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+  author    User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  authorId  String?
+
+  files         ProjectFile[]
+  notifications Notification[]
+
+  @@index([projectId, createdAt])
+}
+
+// A project document: an uploaded file (bytes in ProjectFileData) or a link
+// (e.g. Google Drive). Attachments of an update have updateId set.
+model ProjectFile {
+  id        String   @id @default(cuid())
+  name      String
+  url       String? // a link instead of an upload
+  mimeType  String?
+  size      Int?
+  createdAt DateTime @default(now())
+
+  project      Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId    String
+  update       ProjectUpdate? @relation(fields: [updateId], references: [id], onDelete: Cascade)
+  updateId     String?
+  uploadedBy   User?          @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  uploadedById String?
+
+  data ProjectFileData?
+
+  @@index([projectId, createdAt])
+  @@index([updateId])
+}
+
+// The bytes of an uploaded file, kept apart so lists never load them.
+model ProjectFileData {
+  file   ProjectFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  fileId String      @id
+  data   Bytes
+}
+
+// The general contacts list (מאגר אנשי קשר). Projects link to it.
+model Contact {
+  id        String   @id @default(cuid())
+  name      String
+  company   String?
+  phone     String?
+  email     String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects ProjectContact[]
+
+  @@index([name])
+}
+
+model ProjectContact {
+  id        String      @id @default(cuid())
+  role      ContactRole
+  roleNote  String? // e.g. "יועץ חשמל"
+  createdAt DateTime    @default(now())
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId String
+
+  @@unique([projectId, contactId, role])
+  @@index([contactId])
+}
+
+// יזמים: דוחות פיקוח (SPEC §3.4).
+model SupervisionReport {
+  id              String   @id @default(cuid())
+  visitDate       DateTime
+  performedByName String? // someone who isn't a partner
+  reportSent      Boolean  @default(false)
+  fileUrl         String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  project       Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId     String
+  performedBy   User?   @relation(fields: [performedById], references: [id], onDelete: SetNull)
+  performedById String?
+
+  @@index([projectId, visitDate])
+}
+
+// וילות: שינויים ותוספות (SPEC §3.4).
+model ChangeOrder {
+  id             String    @id @default(cuid())
+  description    String
+  cost           Float?
+  clientApproved Boolean   @default(false)
+  date           DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+
+  @@index([projectId])
+}
+
+// An in-app notification (e.g. a partner was tagged in an update).
+model Notification {
+  id        String    @id @default(cuid())
+  message   String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user      User           @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  actor     User?          @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorId   String?
+  project   Project?       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String?
+  update    ProjectUpdate? @relation(fields: [updateId], references: [id], onDelete: Cascade)
+  updateId  String?
+
+  @@index([userId, readAt, createdAt])
+  @@index([updateId])
+}
+
+// The default stages a new project of a department starts with (SPEC §3.3).
+// Edited in Settings; changes apply to new projects only.
+model StageTemplate {
+  id         String     @id @default(cuid())
+  department Department
+  title      String
+  order      Int
+  createdAt  DateTime   @default(now())
+
+  @@index([department, order])
 }
 
 model Task {
@@ -226,4 +506,136 @@ model Activity {
 
   project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId String?
+}
+
+// ---------------------------------------------------------------------------
+// בדק בית (SPEC §4). A management board only - the inspection itself and its
+// report are done in external apps. All amounts are without VAT.
+
+model Inspector {
+  id             String         @id @default(cuid())
+  name           String
+  phone          String?
+  email          String?
+  color          String         @default("#64748b")
+  active         Boolean        @default(true)
+  employmentType EmploymentType @default(FREELANCER)
+  createdAt      DateTime       @default(now())
+
+  // For a future sign-in of the inspector (SPEC §4.5); רון / גיא link to their users.
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId String? @unique
+
+  rates       InspectorRate[]
+  inspections Inspection[]
+}
+
+// סוגי נכס - an editable list. Not deleted once used; deactivated instead.
+model ApartmentType {
+  id        String   @id @default(cuid())
+  name      String
+  order     Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  priceTiers  PriceTier[]
+  rates       InspectorRate[]
+  inspections Inspection[]
+}
+
+// מחירון ללקוח: a unit price per property type from a number of units in
+// the order (minUnits 1 = the base price; e.g. 2 = "2–3", 4 = "4+").
+model PriceTier {
+  id        String   @id @default(cuid())
+  minUnits  Int
+  unitPrice Float
+  createdAt DateTime @default(now())
+
+  apartmentType   ApartmentType @relation(fields: [apartmentTypeId], references: [id], onDelete: Cascade)
+  apartmentTypeId String
+
+  @@unique([apartmentTypeId, minUnits])
+}
+
+// תעריף בודק: per inspector x kind, optionally for one property type (null =
+// every type without its own rate). multiUnitRate is the reduced per-unit
+// rate when one visit covers several units.
+model InspectorRate {
+  id            String         @id @default(cuid())
+  kind          InspectionKind
+  rate          Float
+  multiUnitRate Float?
+  createdAt     DateTime       @default(now())
+
+  inspector       Inspector      @relation(fields: [inspectorId], references: [id], onDelete: Cascade)
+  inspectorId     String
+  apartmentType   ApartmentType? @relation(fields: [apartmentTypeId], references: [id], onDelete: Cascade)
+  apartmentTypeId String?
+
+  @@index([inspectorId])
+}
+
+// Small app-wide settings, e.g. vatRate (שיעור מע"מ, percent).
+model AppSetting {
+  key   String @id
+  value String
+}
+
+model Inspection {
+  id         String           @id @default(cuid())
+  // Execution
+  date       DateTime? // date only; empty while waiting to be scheduled
+  time       String? // "HH:mm"
+  kind       InspectionKind   @default(REGULAR)
+  unitsCount Int              @default(1)
+  status     InspectionStatus @default(PENDING_SCHEDULING)
+
+  // Client
+  clientName  String
+  clientPhone String?
+  clientEmail String?
+
+  // Property
+  city                String?
+  address             String?
+  apartmentNumber     String?
+  developerContractor String?
+
+  // Money - all without VAT. Saved on the inspection: later rate or price
+  // changes don't touch it.
+  price         Float?
+  paymentStatus InspectionPaymentStatus @default(UNPAID)
+  amountPaid    Float                   @default(0)
+  paymentMethod PaymentMethod?
+  paidAt        DateTime?
+
+  // Report
+  reportSent   Boolean   @default(false)
+  reportSentAt DateTime?
+
+  // Inspector pay
+  inspectorPay    Float?
+  inspectorPaid   Boolean   @default(false)
+  inspectorPaidAt DateTime?
+
+  notes         String?
+  googleEventId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  inspector          Inspector?     @relation(fields: [inspectorId], references: [id], onDelete: SetNull)
+  inspectorId        String?
+  apartmentType      ApartmentType? @relation(fields: [apartmentTypeId], references: [id], onDelete: SetNull)
+  apartmentTypeId    String?
+  parentInspection   Inspection?    @relation("RepeatInspection", fields: [parentInspectionId], references: [id], onDelete: SetNull)
+  parentInspectionId String?
+  repeatInspections  Inspection[]   @relation("RepeatInspection")
+  createdBy          User?          @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdById        String?
+
+  @@index([date])
+  @@index([status])
+  @@index([inspectorId, date])
+  @@index([clientPhone])
+  @@index([parentInspectionId])
 }

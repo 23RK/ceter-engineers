@@ -4,11 +4,16 @@ import { Plus } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { ProjectForm } from "@/components/projects/project-form";
 import type { Department } from "@prisma/client";
+import type { UserOption } from "@/lib/types";
 
 export function NewProjectButton({
   department,
+  users,
+  templates,
 }: {
   department?: Department;
+  users: UserOption[];
+  templates?: { department: Department; title: string }[];
 }) {
   return (
     <Modal
@@ -21,7 +26,12 @@ export function NewProjectButton({
       }
     >
       {(close) => (
-        <ProjectForm defaultDepartment={department} onClose={close} />
+        <ProjectForm
+          defaultDepartment={department}
+          users={users}
+          templates={templates}
+          onClose={close}
+        />
       )}
     </Modal>
   );

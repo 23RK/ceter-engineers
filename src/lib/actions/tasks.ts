@@ -129,3 +129,50 @@ export async function setTaskStatus(taskId: string, status: TaskStatus) {
   revalidatePath("/projects");
   revalidatePath("/departments/[slug]", "page");
 }
+
+/**
+ * Inline edit from the project's task list (SPEC §3.4): status, assignee
+ * (a partner, or nobody) and due date.
+ */
+export async function patchTask(
+  taskId: string,
+  patch: { status?: TaskStatus; assigneeId?: string | null; dueDate?: string | null }
+): Promise<ActionState> {
+  const user = await requireUser();
+  const data: { status?: TaskStatus; assigneeId?: string | null; dueDate?: Date | null } = {};
+  if (patch.status !== undefined) {
+    if (!["TODO", "IN_PROGRESS", "REVIEW", "DONE"].includes(patch.status)) {
+      return { error: "סטטוס לא חוקי" };
+    }
+    data.status = patch.status;
+  }
+  if ("assigneeId" in patch) {
+    if (patch.assigneeId) {
+      const ok = await prisma.user.findFirst({
+        where: { id: patch.assigneeId, role: "PARTNER" },
+        select: { id: true },
+      });
+      if (!ok) return { error: "אחראי לא חוקי" };
+    }
+    data.assigneeId = patch.assigneeId || null;
+  }
+  if ("dueDate" in patch) {
+    data.dueDate = patch.dueDate ? new Date(patch.dueDate) : null;
+  }
+
+  const task = await prisma.task.update({ where: { id: taskId }, data });
+  if (task.projectId && patch.status === "DONE") {
+    await prisma.activity.create({
+      data: {
+        message: `${user.name} סימן/ה את המשימה "${task.title}" כהושלמה`,
+        actorId: user.id,
+        projectId: task.projectId,
+      },
+    });
+  }
+
+  revalidatePath("/tasks");
+  revalidatePath("/dashboard");
+  if (task.projectId) revalidatePath(`/projects/${task.projectId}`);
+  return { ok: true, ts: Date.now() };
+}

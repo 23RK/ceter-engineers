@@ -5,6 +5,8 @@ import { NavLinks } from "@/components/nav-links";
 import { MobileTabBar } from "@/components/mobile-tab-bar";
 import { LogoutButton } from "@/components/logout-button";
 import { Logo } from "@/components/logo";
+import { NotificationBell } from "@/components/notification-bell";
+import { prisma } from "@/lib/prisma";
 
 export default async function AppLayout({
   children,
@@ -12,13 +14,17 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const user = await requireUser();
+  const unread = await prisma.notification.count({
+    where: { userId: user.id, readAt: null },
+  });
 
   return (
     <div className="min-h-screen bg-background md:flex">
       {/* Sidebar - desktop */}
       <aside className="hidden w-64 shrink-0 flex-col overflow-y-auto bg-brand-950 px-4 py-6 md:sticky md:top-0 md:flex md:h-screen">
-        <div className="mb-8 px-1.5">
+        <div className="mb-8 flex items-start justify-between gap-2 px-1.5">
           <Logo size="md" />
+          <NotificationBell count={unread} />
         </div>
 
         <div className="pb-6">
@@ -56,13 +62,16 @@ export default async function AppLayout({
       {/* Top bar - mobile (navigation is in the bottom bar) */}
       <header className="sticky top-0 z-20 flex items-center justify-between gap-3 bg-brand-950 px-4 py-3 md:hidden">
         <Logo size="sm" />
-        <span
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-          style={{ backgroundColor: user.color }}
-          title={user.name}
-        >
-          {user.name.slice(0, 2)}
-        </span>
+        <div className="flex items-center gap-1">
+          <NotificationBell count={unread} />
+          <span
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+            style={{ backgroundColor: user.color }}
+            title={user.name}
+          >
+            {user.name.slice(0, 2)}
+          </span>
+        </div>
       </header>
       <MobileTabBar
         user={{
